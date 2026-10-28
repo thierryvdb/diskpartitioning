@@ -33,7 +33,12 @@ export type Op =
   | { id: string; type: "clonePartition"; partId: string; targetDiskId: string; startLba: number }
   | { id: string; type: "resize"; partId: string; newLengthSectors: number }
   | { id: string; type: "move"; partId: string; newStartLba: number }
-  | { id: string; type: "format"; partId: string; fs: Fs };
+  | { id: string; type: "format"; partId: string; fs: Fs }
+  | { id: string; type: "merge"; partId: string; otherId: string }
+  | { id: string; type: "split"; partId: string; firstLengthSectors: number; newName: string; fs: Fs }
+  | { id: string; type: "setLabel"; partId: string; label: string }
+  | { id: string; type: "setKind"; partId: string; kind: Kind }
+  | { id: string; type: "convertTable"; diskId: string; to: "GPT" | "MBR" };
 
 export interface Issue {
   opId: string;
@@ -49,7 +54,7 @@ export interface Inventory {
 }
 
 export interface Capability {
-  action: "resize" | "move" | "format" | "delete" | "clone";
+  action: "resize" | "move" | "format" | "delete" | "clone" | "merge" | "split" | "label" | "kind";
   support: "simulation_only" | "unsupported";
   reason: string;
 }

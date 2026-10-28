@@ -111,6 +111,23 @@ pub enum OpKind {
     Move { part_id: String, new_start_lba: u64 },
     #[serde(rename_all = "camelCase")]
     Format { part_id: String, fs: Fs },
+    /// Mescla duas partições adjacentes na primeira (por posição).
+    #[serde(rename_all = "camelCase")]
+    Merge { part_id: String, other_id: String },
+    /// Divide: a original fica com `first_length_sectors`; o resto vira nova partição.
+    #[serde(rename_all = "camelCase")]
+    Split {
+        part_id: String,
+        first_length_sectors: u64,
+        new_name: String,
+        fs: Fs,
+    },
+    #[serde(rename_all = "camelCase")]
+    SetLabel { part_id: String, label: String },
+    #[serde(rename_all = "camelCase")]
+    SetKind { part_id: String, kind: Kind },
+    #[serde(rename_all = "camelCase")]
+    ConvertTable { disk_id: String, to: Table },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,6 +160,10 @@ pub enum Action {
     Format,
     Delete,
     Clone,
+    Merge,
+    Split,
+    Label,
+    Kind,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

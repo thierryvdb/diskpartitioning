@@ -302,6 +302,6 @@ Atue como arquiteto e implementador, entregando incrementos pequenos, compiláve
 
 ## 17. Estado de implementação (atualizado em 2026-10-28)
 
-- **MVP 0.1 implementado:** inventário (mock; leitura real Windows/Linux por ação do usuário, somente leitura), mapa proporcional, tabela, propriedades com espaço usado/livre, fila simulada (criar, excluir, redimensionar, mover, formatar, clonar disco e partição), desfazer/refazer/reordenar, antes/depois, exportação/importação de snapshot e plano (schema versionado), Aplicar desabilitado.
+- **MVP 0.1 implementado:** inventário (mock; leitura real Windows/Linux por ação do usuário, somente leitura), mapa proporcional, tabela, propriedades com espaço usado/livre, fila simulada (criar, excluir, redimensionar, mover, formatar, clonar disco e partição, mesclar, dividir, converter GPT↔MBR, alterar rótulo e tipo), desfazer/refazer/reordenar, antes/depois, exportação/importação de snapshot e plano (schema versionado), Aplicar desabilitado.
 - **Matriz de capacidades:** `docs/capabilities.md`. **Modelo de ameaças:** `docs/security/threat-model.md`. **Decisões:** `docs/adr/`.
 - **Pendente:** CI (GitHub Actions), testes por propriedade, adaptadores validados em hardware, ícone para 16/32 px, auditoria WCAG, e todas as fases com escrita (0.2+), que dependem de autorização do proprietário.

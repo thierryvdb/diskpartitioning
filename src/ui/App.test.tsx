@@ -97,3 +97,16 @@ it("ação não suportada fica desabilitada e mostra o motivo", async () => {
   fireEvent.click(screen.getByLabelText(/^C: · NTFS/));
   expect((screen.getByText("Excluir (simular)") as HTMLButtonElement).disabled).toBe(false);
 });
+
+it("converter tabela e mesclar entram na fila; mesclar sem vizinha fica desabilitado com motivo", async () => {
+  render(<App />);
+  fireEvent.click(await screen.findByLabelText(/^C: · NTFS/));
+  const merge = screen.getByText(/^Mesclar com a partição seguinte/) as HTMLButtonElement;
+  expect(merge.disabled).toBe(true);
+  expect(merge.title).toBe("Não há partição adjacente à direita.");
+  fireEvent.click(screen.getByLabelText(/^EFI · FAT32/)); // adjacente a C:
+  fireEvent.click(screen.getByText("Mesclar com a partição seguinte (C:)"));
+  expect(await screen.findByText("Mesclar p1 com p2")).toBeTruthy();
+  fireEvent.click(screen.getByText("Converter para MBR (simular)"));
+  expect(await screen.findByText("Converter d para MBR")).toBeTruthy();
+});

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { APP_NAME, fmtSize, gibToSectors } from "../domain/format";
 import { getInventory, loadInventory, simulatePlan } from "../domain/api";
 import { alignUp, end, gaps, usage } from "../domain/layout";
-import type { Capability, Disk, Fs, Inventory, Op, Plan } from "../domain/types";
+import type { Capability, Disk, Fs, Inventory, Kind, Op, Plan } from "../domain/types";
 import About from "./About";
 import DiskMap, { type Sel } from "./DiskMap";
 import { Overview, type Prefs, Reports, Settings } from "./Pages";
@@ -26,6 +26,11 @@ function describe(op: Op): string {
   switch (op.type) {
     case "create": return `Criar "${op.name}" (${op.fs}) em LBA ${op.startLba}`;
     case "delete": return `Excluir ${op.partId}`;
+    case "merge": return `Mesclar ${op.partId} com ${op.otherId}`;
+    case "split": return `Dividir ${op.partId}: manter ${op.firstLengthSectors} setores e criar "${op.newName}"`;
+    case "setLabel": return `Rótulo de ${op.partId}: "${op.label}"`;
+    case "setKind": return `Tipo de ${op.partId}: ${op.kind.toUpperCase()}`;
+    case "convertTable": return `Converter ${op.diskId} para ${op.to}`;
     case "cloneDisk": return `Clonar disco ${op.sourceDiskId} → ${op.targetDiskId}`;
     case "clonePartition": return `Clonar ${op.partId} → ${op.targetDiskId} em LBA ${op.startLba}`;
     case "resize": return `Redimensionar ${op.partId} para ${op.newLengthSectors} setores`;
@@ -65,6 +70,8 @@ export default function App() {
   const [fs, setFs] = useState<Fs>("ext4");
   const [name, setName] = useState("nova");
   const [target, setTarget] = useState("");
+  const [label, setLabel] = useState("");
+  const [newKind, setNewKind] = useState<Kind>("recovery");
   const seq = useRef(0);
   const [page, setPage] = useState<Page>("discos");
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
@@ -109,6 +116,7 @@ export default function App() {
   const knownSum = known.reduce((a, p) => a + p.lengthSectors, 0);
   const summary = `Capacidade ${fmtSize(disk.totalSectors, disk)} · Não alocado (tabela de partições) ${fmtSize(unalloc, disk)}` +
     (known.length ? ` · Dentro dos sistemas de arquivos com uso conhecido: usado ${fmtSize(usedSum, disk)}, livre ${fmtSize(knownSum - usedSum, disk)}` : "");
+  const neighbor = part ? disk.partitions.find((p) => p.startLba === end(part)) : undefined;
   const caps = part ? plan.capabilities[part.id] ?? [] : [];
   const blockedReason = (a: Capability["action"]) => caps.find((c) => c.action === a && c.support === "unsupported")?.reason;
   const nextId = () => String(++seq.current);
@@ -235,6 +243,9 @@ export default function App() {
             onClick={() => add({ id: nextId(), type: "cloneDisk", sourceDiskId: disk.id, targetDiskId: tgt.id })}>
             Clonar disco inteiro → destino
           </button>
+          <button className="btn" onClick={() => add({ id: nextId(), type: "convertTable", diskId: disk.id, to: disk.table === "GPT" ? "MBR" : "GPT" })}>
+            Converter para {disk.table === "GPT" ? "MBR" : "GPT"} (simular)
+          </button>
           {part && (
             <button className="btn" disabled={!tgt || fitStart === undefined}
               title={fitStart === undefined ? "Não há espaço não alocado suficiente no destino." : undefined}
@@ -255,6 +266,26 @@ export default function App() {
             </label>
             <button className="btn" disabled={!!blockedReason("format")} title={blockedReason("format")} onClick={() => add({ id: nextId(), type: "format", partId: part.id, fs })}>Formatar (simular)</button>
             <button className="btn danger" disabled={!!blockedReason("delete")} title={blockedReason("delete")} onClick={() => add({ id: nextId(), type: "delete", partId: part.id })}>Excluir (simular)</button>
+            <h3>Mesclar, dividir e editar (simulação)</h3>
+            <button className="btn" disabled={!!blockedReason("merge") || !neighbor}
+              title={blockedReason("merge") ?? (neighbor ? undefined : "Não há partição adjacente à direita.")}
+              onClick={() => add({ id: nextId(), type: "merge", partId: part.id, otherId: neighbor!.id })}>
+              Mesclar com a partição seguinte{neighbor ? ` (${neighbor.name})` : ""}
+            </button>
+            <button className="btn" disabled={!!blockedReason("split")} title={blockedReason("split")}
+              onClick={() => add({ id: nextId(), type: "split", partId: part.id, firstLengthSectors: sectors, newName: name, fs })}>
+              Dividir: manter o tamanho acima na original
+            </button>
+            <label>Novo rótulo <input value={label} maxLength={32} onChange={(e) => setLabel(e.target.value)} /></label>
+            <button className="btn" disabled={!!blockedReason("label")} title={blockedReason("label")}
+              onClick={() => add({ id: nextId(), type: "setLabel", partId: part.id, label })}>Alterar rótulo (simular)</button>
+            <label>Tipo da partição
+              <select value={newKind} onChange={(e) => setNewKind(e.target.value as Kind)}>
+                <option value="recovery">Recovery</option><option value="efi">EFI (exige FAT32)</option>
+              </select>
+            </label>
+            <button className="btn" disabled={!!blockedReason("kind")} title={blockedReason("kind")}
+              onClick={() => add({ id: nextId(), type: "setKind", partId: part.id, kind: newKind })}>Alterar tipo (simular)</button>
             {[...new Set(caps.filter((c) => c.support === "unsupported").map((c) => c.reason))].map((r) => (
               <p key={r} className="muted" role="note">Indisponível: {r}</p>
             ))}

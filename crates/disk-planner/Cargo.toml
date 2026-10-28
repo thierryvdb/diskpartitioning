@@ -9,4 +9,5 @@ disk-domain = { path = "../disk-domain" }
 serde.workspace = true
 
 [dev-dependencies]
+serde_json = "1"
 storage-mock = { path = "../storage-mock" }

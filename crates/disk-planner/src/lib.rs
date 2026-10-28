@@ -2,6 +2,8 @@
 
 use disk_domain::*;
 
+mod ops;
+
 /// 1 MiB com setor de 512.
 pub const ALIGN_SECTORS: u64 = 2048;
 const MAX_MBR_PRIMARY: usize = 4;
@@ -117,14 +119,15 @@ fn apply(disks: &mut [Disk], op: &Op) -> Result<Vec<String>, String> {
     {
         return clone_partition(disks, &op.id, part_id, target_disk_id, *start_lba);
     }
+    if let Some(r) = ops::apply(disks, op) {
+        return r;
+    }
     let part_id = match &op.kind {
         OpKind::Delete { part_id }
         | OpKind::Resize { part_id, .. }
         | OpKind::Move { part_id, .. }
         | OpKind::Format { part_id, .. } => part_id,
-        OpKind::Create { .. } | OpKind::CloneDisk { .. } | OpKind::ClonePartition { .. } => {
-            unreachable!()
-        }
+        _ => unreachable!(),
     };
     let (d, i) = find_mut(disks, part_id)
         .ok_or("Esta tarefa depende de uma operação anterior (partição alvo inexistente).")?;
@@ -163,9 +166,7 @@ fn apply(disks: &mut [Disk], op: &Op) -> Result<Vec<String>, String> {
             p.used_sectors = Some(0);
             warn.push("Formatar apagaria todos os dados (apenas simulação).".to_string());
         }
-        OpKind::Create { .. } | OpKind::CloneDisk { .. } | OpKind::ClonePartition { .. } => {
-            unreachable!()
-        }
+        _ => unreachable!(),
     }
     Ok(warn)
 }
@@ -281,10 +282,14 @@ pub fn capabilities(p: &Partition) -> Vec<Capability> {
     });
     vec![
         cap(Action::Resize, protected.clone().or(unknown.clone())),
-        cap(Action::Move, protected.clone().or(unknown)),
+        cap(Action::Move, protected.clone().or(unknown.clone())),
         cap(Action::Format, protected.clone()),
-        cap(Action::Delete, protected),
+        cap(Action::Delete, protected.clone()),
         cap(Action::Clone, None),
+        cap(Action::Merge, protected.clone().or(unknown.clone())),
+        cap(Action::Split, protected.clone().or(unknown.clone())),
+        cap(Action::Label, protected.clone().or(unknown)),
+        cap(Action::Kind, protected),
     ]
 }
 
@@ -574,6 +579,29 @@ mod tests {
             )],
         );
         assert_eq!(blocked.blocked_ops, ["1"]);
+    }
+
+    #[test]
+    fn operacoes_avancadas_pelo_planejador_e_formato_ipc() {
+        // formato JSON que a UI envia (camelCase, tag "type")
+        let ops: Vec<Op> = serde_json::from_str(
+            r#"[{"id":"1","type":"convertTable","diskId":"disk0","to":"MBR"},
+                {"id":"2","type":"convertTable","diskId":"disk1","to":"MBR"},
+                {"id":"3","type":"setLabel","partId":"d0p3","label":"Sistema"},
+                {"id":"4","type":"setKind","partId":"d0p3","kind":"recovery"},
+                {"id":"5","type":"merge","partId":"d1p1","otherId":"d1p2"},
+                {"id":"6","type":"split","partId":"d2p1","firstLengthSectors":524288,"newName":"B","fs":"exfat"}]"#,
+        )
+        .unwrap();
+        let p = simulate(&base(), &ops);
+        assert_eq!(p.blocked_ops, ["1"], "{:?}", p.issues); // disk0 tem MSR e 4 partições
+        assert_eq!(p.disks[1].table, Table::Mbr);
+        assert_eq!(p.disks[0].partitions[2].name, "Sistema");
+        assert_eq!(p.disks[0].partitions[2].kind, Kind::Recovery);
+        assert_eq!(p.disks[1].partitions.len(), 2, "mesclou / e swap");
+        assert_eq!(p.disks[2].partitions.len(), 3);
+        // simulação não altera o snapshot base
+        assert_eq!(base()[1].table, Table::Gpt);
     }
 
     #[test]
