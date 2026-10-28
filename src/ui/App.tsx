@@ -1,14 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { APP_NAME, fmtSize, gibToSectors } from "../domain/format";
-import { listDisks, simulatePlan } from "../domain/api";
+import { getInventory, loadInventory, simulatePlan } from "../domain/api";
 import { alignUp, end, gaps } from "../domain/layout";
-import type { Disk, Fs, Op, Plan } from "../domain/types";
+import type { Disk, Fs, Inventory, Op, Plan } from "../domain/types";
 import About from "./About";
 import DiskMap, { type Sel } from "./DiskMap";
 import { Overview, type Prefs, Reports, Settings } from "./Pages";
 
 const PAGES = [["visao", "Visão geral"], ["discos", "Discos"], ["relatorios", "Relatórios"], ["config", "Configurações"]] as const;
 type Page = (typeof PAGES)[number][0];
+
+const NO_DISK: Disk = {
+  id: "-", model: "Nenhum disco encontrado", bus: "", table: "GPT", sectorSize: 512,
+  totalSectors: 0, firstUsableLba: 0, lastUsableExclLba: 0, partitions: [],
+};
 
 const DEFAULT_PREFS: Prefs = { theme: "auto", density: "comfortable" };
 function loadPrefs(): Prefs {
@@ -30,7 +35,9 @@ function describe(op: Op): string {
 }
 
 export default function App() {
-  const [base, setBase] = useState<Disk[] | null>(null); // snapshot imutável (fonte: Mock via IPC)
+  const [inv, setInv] = useState<Inventory | null>(null); // snapshot imutável (Mock ou Real via IPC)
+  const [confirmReal, setConfirmReal] = useState(false);
+  const [notice, setNotice] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
   const [error, setError] = useState("");
   const [ops, setOps] = useState<Op[]>([]);
@@ -53,14 +60,25 @@ export default function App() {
     try { localStorage.setItem("prefs", JSON.stringify(prefs)); } catch { /* sem storage: só não persiste */ }
   }, [prefs]);
 
-  useEffect(() => { listDisks().then(setBase, (e) => setError(String(e))); }, []);
-  useEffect(() => { simulatePlan(ops).then(setPlan, (e) => setError(String(e))); }, [ops]);
+  useEffect(() => { getInventory().then(setInv, (e) => setError(String(e))); }, []);
+
+  // real = true só é chamado pelo botão de confirmação (leitura somente leitura dos discos da máquina)
+  const reload = (real: boolean) => {
+    setNotice("");
+    loadInventory(real).then((next) => {
+      if (inv && ops.length && next.fingerprint !== inv.fingerprint)
+        setNotice("O layout mudou. Atualize o inventário para recalcular a simulação.");
+      setInv(next); setDiskIdx(0); setSel(null); setConfirmReal(false);
+    }, (e) => setNotice(`Falha ao ler inventário: ${e}`));
+  };
+  useEffect(() => { simulatePlan(ops).then(setPlan, (e) => setError(String(e))); }, [ops, inv?.fingerprint]);
 
   if (error) return <p role="alert" className="error">Falha de IPC: {error}</p>;
-  if (!base || !plan) return <p role="status">Carregando inventário…</p>;
+  if (!inv || !plan) return <p role="status">Carregando inventário…</p>;
+  const base = inv.disks;
 
-  const disk = plan.disks[diskIdx];
-  const original = base[diskIdx];
+  const disk = plan.disks[diskIdx] ?? NO_DISK;
+  const original = base[diskIdx] ?? NO_DISK;
   const part = disk.partitions.find((p) => p.id === sel?.partId);
   const gap = gaps(disk).find((g) => g.startLba === sel?.gapStart);
   const sectors = gibToSectors(Number(gib) || 0, disk);
@@ -110,6 +128,29 @@ export default function App() {
       {page === "discos" && <>
       <aside className="side" aria-label="Discos">
         <h2>Discos</h2>
+        <div className="source">
+          <p><strong>Fonte:</strong> {inv.source === "real" ? "Real (somente leitura)" : "Mock (dados fictícios)"}</p>
+          {inv.source === "real" ? (
+            <>
+              <button className="btn" onClick={() => reload(true)}>Atualizar inventário</button>
+              <button className="btn" onClick={() => reload(false)}>Voltar ao mock</button>
+            </>
+          ) : (
+            <button className="btn" onClick={() => setConfirmReal(true)}>Ler discos reais…</button>
+          )}
+          {confirmReal && (
+            <div role="alertdialog" aria-label="Confirmar leitura de discos reais" className="confirm">
+              <p>
+                Isto vai <strong>ler</strong> (somente leitura) os discos desta máquina via PowerShell/lsblk.
+                Nada será gravado e nenhuma elevação será solicitada. Simulações continuam sem efeito em disco.
+              </p>
+              <button className="btn" onClick={() => reload(true)}>Confirmo: ler discos reais</button>
+              <button className="btn" onClick={() => setConfirmReal(false)}>Cancelar</button>
+            </div>
+          )}
+          {notice && <p role="status" className="warning">{notice}</p>}
+          {inv.errors.map((e, i) => <p key={i} className="warning">{e}</p>)}
+        </div>
         {base.map((d, i) => (
           <button key={d.id} className={i === diskIdx ? "disk active" : "disk"} onClick={() => { setDiskIdx(i); setSel(null); }}>
             <strong>{d.model}</strong>
@@ -233,7 +274,7 @@ export default function App() {
         <button className="btn" disabled title="Escrita real indisponível no MVP 0.1">Aplicar alterações (indisponível nesta versão)</button>
       </section>
 
-      <footer className="status">Inventário: mock · Nenhuma operação será gravada em discos</footer>
+      <footer className="status">Inventário: {inv.source === "real" ? "REAL (somente leitura)" : "mock"} · Nenhuma operação será gravada em discos</footer>
       {about && <About onClose={() => setAbout(false)} />}
     </div>
   );

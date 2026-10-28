@@ -7,7 +7,7 @@ Escopo: app Tauri 2 (Rust + React), somente leitura/simulação, dados mock. Reg
 |---|---|---|
 | Escrita/elevação em dispositivos | Inexistente | Teste `no_write_paths` (`crates/disk-planner`) falha se o código de produção citar `diskpart`, `mkfs`, `parted`, `DeviceIoControl`, `Command::new`, `CreateFileW` ou `/dev/` |
 | Comando genérico de shell | Inexistente | `invoke_handler`: só `list_disks`, `simulate_plan`, `export_snapshot`, `export_plan`, `import_plan` |
-| Leitura de discos reais | Código pronto, **não ligado** | `list_disks` usa só `storage-mock`. Os adaptadores `storage-windows` (PowerShell `Get-*`) e `storage-linux` (`lsblk --json`) têm parsers testados com fixtures sintéticas e nunca foram executados contra hardware; ligá-los à UI exige autorização específica do proprietário |
+| Leitura de discos reais | Ligada, só por ação do usuário | Padrão é `storage-mock`. O botão "Ler discos reais…" exige confirmação na tela e chama `load_inventory(real=true)` (PowerShell `Get-*` / `lsblk`, somente leitura, sem elevação). Nenhum agente executou essa leitura; adaptadores só testados com fixtures sintéticas |
 | Criação de processos | Um único ponto | `storage-common::run_readonly`: allowlist `powershell`/`lsblk`, argumentos fixos, timeout de 15 s, saída limitada a 8 MiB; teste garante que `Command::new` só existe lá |
 | Script PowerShell | Somente leitura | Teste falha se contiver `Set-/New-/Remove-/Resize-/Format-/Clear-/Initialize-/Start-/Invoke-` |
 | Permissões Tauri | Mínimas | `core:default` + `opener:allow-open-url` restrito a `https://github.com/thierryvdb/diskpartitioning*`; sem fs/shell/http |

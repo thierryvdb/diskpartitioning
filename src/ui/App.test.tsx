@@ -9,11 +9,15 @@ const disk: Disk = {
   totalSectors: 10000, firstUsableLba: 0, lastUsableExclLba: 10000,
   partitions: [{ id: "p1", name: "EFI", startLba: 0, lengthSectors: 1000, fs: "fat32", kind: "efi", usedSectors: null }],
 };
+const calls: string[] = [];
+const inventory = { source: "mock", disks: [disk], errors: [], fingerprint: "f1" };
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: async (cmd: string, args?: { ops: Op[] }) =>
-    cmd === "list_disks"
-      ? [disk]
-      : { disks: [disk], issues: [], blockedOps: (args?.ops ?? []).map((o) => o.id) },
+  invoke: async (cmd: string, args?: { ops: Op[]; real?: boolean }) => {
+    calls.push(cmd + (cmd === "load_inventory" ? `:${args?.real}` : ""));
+    if (cmd === "get_inventory") return inventory;
+    if (cmd === "load_inventory") return { ...inventory, source: args?.real ? "real" : "mock", fingerprint: "f2" };
+    return { disks: [disk], issues: [], blockedOps: (args?.ops ?? []).map((o) => o.id) };
+  },
 }));
 
 afterEach(cleanup);
@@ -54,4 +58,17 @@ it("Configurações aplica e persiste o tema", async () => {
   fireEvent.change(screen.getByLabelText("Tema"), { target: { value: "dark" } });
   expect(document.documentElement.dataset.theme).toBe("dark");
   expect(localStorage.getItem("prefs")).toContain("dark");
+});
+
+it("leitura real exige confirmação explícita antes de chamar o backend", async () => {
+  calls.length = 0;
+  render(<App />);
+  fireEvent.click(await screen.findByText("Ler discos reais…"));
+  expect(calls.some((c) => c.startsWith("load_inventory"))).toBe(false);
+  fireEvent.click(screen.getByText("Cancelar"));
+  expect(calls.some((c) => c.startsWith("load_inventory"))).toBe(false);
+  fireEvent.click(screen.getByText("Ler discos reais…"));
+  fireEvent.click(screen.getByText("Confirmo: ler discos reais"));
+  await vi.waitFor(() => expect(calls).toContain("load_inventory:true"));
+  expect(await screen.findByText(/REAL \(somente leitura\)/, { selector: ".status" })).toBeTruthy();
 });

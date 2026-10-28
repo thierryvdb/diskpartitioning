@@ -41,6 +41,13 @@ export interface Issue {
   message: string;
 }
 
+export interface Inventory {
+  source: "mock" | "real";
+  disks: Disk[];
+  errors: string[];
+  fingerprint: string;
+}
+
 export interface Plan {
   disks: Disk[]; // layout previsto; o snapshot base nunca é alterado
   issues: Issue[];

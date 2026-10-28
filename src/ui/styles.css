@@ -44,6 +44,8 @@ h1, h2, h3 { margin: 0 0 .5rem; } h1 { font-size: 1.1rem; } h2 { font-size: 1rem
 .menu { position: relative; } .dropdown { position: absolute; right: 0; background: var(--raised); border: 1px solid var(--border); border-radius: 6px; z-index: 5; }
 .dropdown button { display: block; width: 100%; padding: 8px 24px; border: 0; background: none; }
 
+.source { margin-bottom: 12px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
+.confirm { margin-top: 8px; padding: 8px; border: 2px solid var(--warn); border-radius: 6px; }
 .disk { display: block; width: 100%; text-align: left; margin-bottom: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--raised); }
 .disk small { display: block; color: var(--muted); } .disk.active { border-color: var(--selected); box-shadow: inset 3px 0 var(--selected); }
 
