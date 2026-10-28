@@ -7,7 +7,8 @@ import App from "./App";
 const disk: Disk = {
   id: "d", model: "Disco teste", bus: "SATA", table: "GPT", sectorSize: 512,
   totalSectors: 10000, firstUsableLba: 0, lastUsableExclLba: 10000,
-  partitions: [{ id: "p1", name: "EFI", startLba: 0, lengthSectors: 1000, fs: "fat32", kind: "efi", usedSectors: null }],
+  partitions: [{ id: "p1", name: "EFI", startLba: 0, lengthSectors: 1000, fs: "fat32", kind: "efi", usedSectors: null },
+    { id: "p2", name: "C:", startLba: 1000, lengthSectors: 2048, fs: "ntfs", kind: "normal", usedSectors: 512 }],
 };
 const calls: string[] = [];
 const inventory = { source: "mock", disks: [disk], errors: [], fingerprint: "f1" };
@@ -49,7 +50,7 @@ it("Visão geral mostra contadores do inventário", async () => {
   render(<App />);
   fireEvent.click(await screen.findByText("Visão geral", { selector: ".pages button" }));
   expect(screen.getByText("Discos", { selector: "dt" })).toBeTruthy();
-  expect(screen.getByText("Partições", { selector: "dt" }).nextSibling?.textContent).toBe("1");
+  expect(screen.getByText("Partições", { selector: "dt" }).nextSibling?.textContent).toBe("2");
 });
 
 it("Configurações aplica e persiste o tema", async () => {
@@ -71,4 +72,14 @@ it("leitura real exige confirmação explícita antes de chamar o backend", asyn
   fireEvent.click(screen.getByText("Confirmo: ler discos reais"));
   await vi.waitFor(() => expect(calls).toContain("load_inventory:true"));
   expect(await screen.findByText(/REAL \(somente leitura\)/, { selector: ".status" })).toBeTruthy();
+});
+
+it("partição selecionada mostra espaço ocupado e livre; sem dado mostra desconhecido", async () => {
+  render(<App />);
+  fireEvent.click(await screen.findByLabelText(/^C: · NTFS/));
+  const dl = document.querySelector(".usage dl")!;
+  expect(dl.textContent).toContain("Ocupado256.0 KiB (25.0%)"); // 512 setores de 512 B de 2048
+  expect(dl.textContent).toContain("Livre (no FS)768.0 KiB");
+  fireEvent.click(screen.getByLabelText(/^EFI · FAT32/));
+  expect(screen.getByText("Uso do sistema de arquivos: desconhecido.")).toBeTruthy();
 });

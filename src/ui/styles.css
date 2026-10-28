@@ -58,6 +58,12 @@ h1, h2, h3 { margin: 0 0 .5rem; } h1 { font-size: 1.1rem; } h2 { font-size: 1rem
 .seg.fs-unknown { background: repeating-linear-gradient(45deg, #475569, #475569 6px, #64748b 6px, #64748b 12px); }
 .seg.gap { background: var(--raised); color: var(--muted); border: 1px dotted var(--muted); }
 .seg.virtual { border: 2px dashed #fbbf24; }
+.seg { position: relative; }
+.seg .use { position: absolute; left: 0; bottom: 0; height: 5px; background: rgba(255, 255, 255, .85); }
+.usage progress { width: 100%; height: 14px; }
+.usage dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 6px 0; }
+.usage dt { color: var(--muted); } .usage dd { margin: 0; text-align: right; }
+tbody tr:focus-visible { outline-offset: -3px; }
 .seg.selected { border: 2px solid var(--selected); outline: 2px solid var(--selected); }
 
 table { width: 100%; border-collapse: collapse; } th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); font-size: 13px; }

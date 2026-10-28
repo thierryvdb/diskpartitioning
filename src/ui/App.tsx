@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { APP_NAME, fmtSize, gibToSectors } from "../domain/format";
 import { getInventory, loadInventory, simulatePlan } from "../domain/api";
-import { alignUp, end, gaps } from "../domain/layout";
+import { alignUp, end, gaps, usage } from "../domain/layout";
 import type { Disk, Fs, Inventory, Op, Plan } from "../domain/types";
 import About from "./About";
 import DiskMap, { type Sel } from "./DiskMap";
@@ -32,6 +32,21 @@ function describe(op: Op): string {
     case "move": return `Mover ${op.partId} para LBA ${op.newStartLba}`;
     case "format": return `Formatar ${op.partId} como ${op.fs}`;
   }
+}
+
+function PartUsage({ p, d }: { p: Disk["partitions"][number]; d: Disk }) {
+  const u = usage(p);
+  if (!u) return <p className="muted">Uso do sistema de arquivos: desconhecido.</p>;
+  return (
+    <div className="usage">
+      <progress value={u.used} max={p.lengthSectors} aria-label={`Espaço ocupado em ${p.name}`} />
+      <dl>
+        <dt>Tamanho</dt><dd>{fmtSize(p.lengthSectors, d)}</dd>
+        <dt>Ocupado</dt><dd>{fmtSize(u.used, d)} ({u.pct.toFixed(1)}%)</dd>
+        <dt>Livre (no FS)</dt><dd>{fmtSize(u.free, d)}</dd>
+      </dl>
+    </div>
+  );
 }
 
 export default function App() {
@@ -88,6 +103,12 @@ export default function App() {
   const fitStart = part && tgt
     ? gaps(tgt).map((g) => alignUp(g.startLba)).find((s, i) => s + part.lengthSectors <= gaps(tgt)[i].startLba + gaps(tgt)[i].lengthSectors)
     : undefined;
+  const unalloc = gaps(disk).reduce((a, g) => a + g.lengthSectors, 0);
+  const known = disk.partitions.filter((p) => usage(p));
+  const usedSum = known.reduce((a, p) => a + usage(p)!.used, 0);
+  const knownSum = known.reduce((a, p) => a + p.lengthSectors, 0);
+  const summary = `Capacidade ${fmtSize(disk.totalSectors, disk)} · Não alocado (tabela de partições) ${fmtSize(unalloc, disk)}` +
+    (known.length ? ` · Dentro dos sistemas de arquivos com uso conhecido: usado ${fmtSize(usedSum, disk)}, livre ${fmtSize(knownSum - usedSum, disk)}` : "");
   const nextId = () => String(++seq.current);
 
   const add = (op: Op) => { setOps([...ops, op]); setRedo([]); };
@@ -161,7 +182,7 @@ export default function App() {
 
       <main className="main">
         <h2>{disk.model}</h2>
-        <p className="muted">Espaço não alocado é derivado da tabela de partições, não do espaço livre dentro do sistema de arquivos.</p>
+        <p className="muted">{summary}</p>
         {ops.length > 0 && <h3>Atual</h3>}
         {ops.length > 0 && <DiskMap disk={original} sel={null} onSel={() => {}} label="Layout atual" />}
         {ops.length > 0 && <h3>Previsto (simulado)</h3>}
@@ -169,20 +190,22 @@ export default function App() {
 
         <table>
           <caption className="sr">Partições e espaço não alocado</caption>
-          <thead><tr><th>Nome</th><th>FS</th><th>Tamanho</th><th>Início (LBA)</th><th>Fim (excl.)</th><th>Uso no FS</th></tr></thead>
+          <thead><tr><th>Nome</th><th>FS</th><th>Tamanho</th><th>Início (LBA)</th><th>Fim (excl.)</th><th>Uso no FS (usado · livre)</th></tr></thead>
           <tbody>
             {[...disk.partitions.map((p) => ({ p, start: p.startLba, len: p.lengthSectors })),
               ...gaps(disk).map((g) => ({ p: undefined, start: g.startLba, len: g.lengthSectors }))]
               .sort((a, b) => (a.start < b.start ? -1 : 1))
               .map((r) => (
                 <tr key={r.p?.id ?? `g${r.start}`} className={(r.p ? sel?.partId === r.p.id : sel?.gapStart === r.start) ? "selected" : ""}
-                  onClick={() => setSel(r.p ? { partId: r.p.id } : { gapStart: r.start })}>
+                  tabIndex={0} aria-selected={r.p ? sel?.partId === r.p.id : sel?.gapStart === r.start}
+                  onClick={() => setSel(r.p ? { partId: r.p.id } : { gapStart: r.start })}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSel(r.p ? { partId: r.p.id } : { gapStart: r.start }); } }}>
                   <td>{r.p ? r.p.name + (r.p.virtual ? " (PREVISTO)" : "") : "Não alocado"}</td>
                   <td>{r.p?.fs ?? "—"}</td>
                   <td>{fmtSize(r.len, disk)}</td>
                   <td>{String(r.start)}</td>
                   <td>{String(r.p ? end(r.p) : r.start + r.len)}</td>
-                  <td>{r.p?.usedSectors != null ? fmtSize(r.p.usedSectors, disk) : "desconhecido"}</td>
+                  <td>{r.p ? (usage(r.p) ? `${fmtSize(usage(r.p)!.used, disk)} usado · ${fmtSize(usage(r.p)!.free, disk)} livre` : "desconhecido") : "—"}</td>
                 </tr>
               ))}
           </tbody>
@@ -222,6 +245,7 @@ export default function App() {
         {part && (
           <div className="actions">
             <p><strong>{part.name}</strong> · {part.kind} · {part.fs}</p>
+            <PartUsage p={part} d={disk} />
             <button className="btn" onClick={() => add({ id: nextId(), type: "resize", partId: part.id, newLengthSectors: sectors })}>Redimensionar (simular)</button>
             <button className="btn" onClick={() => add({ id: nextId(), type: "move", partId: part.id, newStartLba: alignUp(part.startLba + sectors) })}>Mover +tamanho (simular)</button>
             <label>Formatar como

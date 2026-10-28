@@ -1,4 +1,4 @@
-import { end, gaps } from "../domain/layout";
+import { end, gaps, usage } from "../domain/layout";
 import { fmtSize } from "../domain/format";
 import type { Disk } from "../domain/types";
 
@@ -20,6 +20,8 @@ export default function DiskMap({ disk, sel, onSel, label }: {
     <div role="group" aria-label={label} className="map">
       {items.map((it) => {
         const size = fmtSize(it.len, disk);
+        const u = it.p && usage(it.p);
+        const useTxt = u ? `\nUsado ${fmtSize(u.used, disk)} · Livre ${fmtSize(u.free, disk)}` : it.p ? "\nUso: desconhecido" : "";
         const range = `LBA ${it.start}–${it.p ? end(it.p) : it.start + it.len}`;
         const selected = it.p ? sel?.partId === it.p.id : sel?.gapStart === it.start;
         const cls = it.p ? `seg fs-${it.p.fs} ${it.p.kind} ${it.p.virtual ? "virtual" : ""}` : "seg gap";
@@ -29,13 +31,14 @@ export default function DiskMap({ disk, sel, onSel, label }: {
             key={it.p?.id ?? `gap-${it.start}`}
             className={`${cls} ${selected ? "selected" : ""}`}
             style={{ flexGrow: pct(it.len, total) }}
-            title={`${name}\n${size}\n${range}${it.p?.virtual ? "\nPREVISTO" : ""}`}
-            aria-label={`${name}, ${size}${it.p?.virtual ? ", previsto" : ""}`}
+            title={`${name}\n${size}${useTxt}\n${range}${it.p?.virtual ? "\nPREVISTO" : ""}`}
+            aria-label={`${name}, ${size}${u ? `, usado ${fmtSize(u.used, disk)}, livre ${fmtSize(u.free, disk)}` : ""}${it.p?.virtual ? ", previsto" : ""}`}
             aria-pressed={selected}
             onClick={() => onSel(it.p ? { partId: it.p.id } : { gapStart: it.start })}
           >
             <span>{name}</span>
             <small>{size}</small>
+            {u && <i className="use" style={{ width: `${u.pct}%` }} aria-hidden="true" />}
           </button>
         );
       })}
