@@ -529,37 +529,62 @@ mod tests {
     }
 }
 
-/// MVP 0.1: nenhum código de produção pode conter chamadas de escrita/elevação em dispositivos.
+/// MVP 0.1: nenhum código de produção pode conter chamadas de escrita/elevação em dispositivos,
+/// e processos só podem ser criados em `storage-common` (que aplica uma allowlist de programas de leitura).
 #[cfg(test)]
 mod no_write_paths {
+    const CRATES: [&str; 8] = [
+        "disk-domain",
+        "disk-planner",
+        "storage-mock",
+        "storage-persistence",
+        "storage-common",
+        "storage-windows",
+        "storage-linux",
+        "../src-tauri",
+    ];
+    const MUTANTES: [&str; 14] = [
+        "diskpart",
+        "DeviceIoControl",
+        "mkfs",
+        "parted",
+        "CreateFileW",
+        "/dev/",
+        "wipefs",
+        "sfdisk",
+        "sgdisk",
+        "Set-Partition",
+        "Resize-Partition",
+        "New-Partition",
+        "Format-Volume",
+        "Clear-Disk",
+    ];
+
+    fn producao(c: &str) -> String {
+        let f = format!("{}/../{c}/src/lib.rs", env!("CARGO_MANIFEST_DIR"));
+        let src = std::fs::read_to_string(&f).unwrap_or_else(|e| panic!("{f}: {e}"));
+        src.split("#[cfg(test)]").next().unwrap().to_string()
+    }
+
     #[test]
     fn producao_sem_apis_de_escrita() {
-        let proibidos = [
-            "diskpart",
-            "DeviceIoControl",
-            "mkfs",
-            "parted",
-            "Command::new",
-            "CreateFileW",
-            "/dev/",
-        ];
-        let raiz = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
-        let arquivos = [
-            "disk-domain",
-            "disk-planner",
-            "storage-mock",
-            "storage-persistence",
-        ]
-        .map(|c| format!("{raiz}/{c}/src/lib.rs"));
-        for f in arquivos
-            .iter()
-            .chain(std::iter::once(&format!("{raiz}/../src-tauri/src/lib.rs")))
-        {
-            let src = std::fs::read_to_string(f).unwrap();
-            let producao = src.split("#[cfg(test)]").next().unwrap();
-            for p in proibidos {
-                assert!(!producao.contains(p), "{f} contém `{p}`");
+        for c in CRATES {
+            let src = producao(c);
+            for p in MUTANTES {
+                assert!(!src.contains(p), "{c} contém `{p}`");
             }
+        }
+    }
+
+    #[test]
+    fn processos_so_em_storage_common() {
+        for c in CRATES {
+            let n = producao(c).matches("Command::new").count();
+            assert_eq!(
+                n,
+                usize::from(c == "storage-common"),
+                "{c}: Command::new x{n}"
+            );
         }
     }
 }

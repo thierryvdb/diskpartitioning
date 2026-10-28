@@ -143,6 +143,13 @@ pub struct Plan {
     pub blocked_ops: Vec<String>,
 }
 
+/// Resultado de uma descoberta: dados parciais + erros contextuais por dispositivo.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Discovery {
+    pub disks: Vec<Disk>,
+    pub errors: Vec<String>,
+}
+
 /// Contrato de descoberta (somente leitura). Adaptadores reais só após autorização do proprietário.
 pub trait StorageProvider {
     fn discover(&self) -> Vec<Disk>;

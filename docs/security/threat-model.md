@@ -7,7 +7,9 @@ Escopo: app Tauri 2 (Rust + React), somente leitura/simulação, dados mock. Reg
 |---|---|---|
 | Escrita/elevação em dispositivos | Inexistente | Teste `no_write_paths` (`crates/disk-planner`) falha se o código de produção citar `diskpart`, `mkfs`, `parted`, `DeviceIoControl`, `Command::new`, `CreateFileW` ou `/dev/` |
 | Comando genérico de shell | Inexistente | `invoke_handler`: só `list_disks`, `simulate_plan`, `export_snapshot`, `export_plan`, `import_plan` |
-| Leitura de discos reais | Inexistente | Única fonte é `storage-mock`; adaptadores reais exigem autorização do proprietário |
+| Leitura de discos reais | Código pronto, **não ligado** | `list_disks` usa só `storage-mock`. Os adaptadores `storage-windows` (PowerShell `Get-*`) e `storage-linux` (`lsblk --json`) têm parsers testados com fixtures sintéticas e nunca foram executados contra hardware; ligá-los à UI exige autorização específica do proprietário |
+| Criação de processos | Um único ponto | `storage-common::run_readonly`: allowlist `powershell`/`lsblk`, argumentos fixos, timeout de 15 s, saída limitada a 8 MiB; teste garante que `Command::new` só existe lá |
+| Script PowerShell | Somente leitura | Teste falha se contiver `Set-/New-/Remove-/Resize-/Format-/Clear-/Initialize-/Start-/Invoke-` |
 | Permissões Tauri | Mínimas | `core:default` + `opener:allow-open-url` restrito a `https://github.com/thierryvdb/diskpartitioning*`; sem fs/shell/http |
 | CSP | Restritiva | `default-src 'self'` (sem scripts remotos/inline); `style-src` permite inline por causa de estilos React |
 | Exportação | Pasta de dados do app, nomes fixos | `write_export` aceita só `snapshot.json` e `plano-simulado.json`; o caminho nunca vem da UI |
@@ -22,6 +24,8 @@ Escopo: app Tauri 2 (Rust + React), somente leitura/simulação, dados mock. Reg
 - **Dependências** → versões travadas em `Cargo.lock`/`package-lock.json`; revisar com `cargo audit`/`npm audit` antes de release (não executado: ferramentas não instaladas/CI ainda não configurado).
 
 ## Lacunas conhecidas (não resolvidas)
+- Adaptadores reais não validados em hardware (nem em VM): o formato real do PowerShell/`lsblk` pode divergir das fixtures (versões de util-linux, PowerShell 5.1 vs 7). Disco sem tabela GPT/MBR é reportado como erro e omitido (o domínio ainda não tem `Table::Unknown`).
+- Identidade de disco é transitória (`diskN`, `sda`); sem serial/WWN por privacidade — insuficiente para revalidação TOCTOU em fase com escrita.
 - Sem assinatura de código dos instaladores.
 - `npm audit`: 6 avisos (2 críticos, 1 alto) só em ferramentas de desenvolvimento (vite/vitest/esbuild/tinypool); `npm audit --omit=dev` = 0. Corrigir exige atualização major (`--force`), adiada. Servidor de dev do Vite só roda localmente.
 - Revisão manual, não auditoria independente.
