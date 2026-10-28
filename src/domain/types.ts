@@ -48,8 +48,15 @@ export interface Inventory {
   fingerprint: string;
 }
 
+export interface Capability {
+  action: "resize" | "move" | "format" | "delete" | "clone";
+  support: "simulation_only" | "unsupported";
+  reason: string;
+}
+
 export interface Plan {
   disks: Disk[]; // layout previsto; o snapshot base nunca é alterado
   issues: Issue[];
   blockedOps: string[];
+  capabilities: Record<string, Capability[]>;
 }

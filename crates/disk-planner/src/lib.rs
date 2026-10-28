@@ -256,6 +256,38 @@ fn clone_partition(
     Ok(warn)
 }
 
+/// Matriz de capacidades de uma partição (mesmas regras que `apply` bloqueia, mas com motivo antecipado).
+pub fn capabilities(p: &Partition) -> Vec<Capability> {
+    const SIM: &str = "Somente simulação: escrita real indisponível no MVP 0.1.";
+    let cap = |action, blocked: Option<String>| match blocked {
+        Some(reason) => Capability {
+            action,
+            support: Support::Unsupported,
+            reason,
+        },
+        None => Capability {
+            action,
+            support: Support::SimulationOnly,
+            reason: SIM.into(),
+        },
+    };
+    let protected = p
+        .kind
+        .is_protected()
+        .then(|| format!("Partição {:?} é protegida.", p.kind).to_uppercase());
+    let unknown = (p.fs == Fs::Unknown).then(|| {
+        "Sistema de arquivos desconhecido ou não suportado (ex.: criptografado, LVM, RAID)."
+            .to_string()
+    });
+    vec![
+        cap(Action::Resize, protected.clone().or(unknown.clone())),
+        cap(Action::Move, protected.clone().or(unknown)),
+        cap(Action::Format, protected.clone()),
+        cap(Action::Delete, protected),
+        cap(Action::Clone, None),
+    ]
+}
+
 /// Simulação determinística; operações inválidas são bloqueadas e puladas.
 pub fn simulate(base: &[Disk], ops: &[Op]) -> Plan {
     let mut disks = base.to_vec();
@@ -286,10 +318,16 @@ pub fn simulate(base: &[Disk], ops: &[Op]) -> Plan {
             None => disks = next,
         }
     }
+    let capabilities = disks
+        .iter()
+        .flat_map(|d| &d.partitions)
+        .map(|p| (p.id.clone(), capabilities(p)))
+        .collect();
     Plan {
         disks,
         issues,
         blocked_ops,
+        capabilities,
     }
 }
 
@@ -506,6 +544,36 @@ mod tests {
             .partitions
             .iter()
             .any(|x| x.id == "new-a" && x.r#virtual));
+    }
+
+    #[test]
+    fn matriz_de_capacidades_tem_motivo() {
+        let p = simulate(&base(), &[]);
+        let get = |id: &str, a: Action| {
+            p.capabilities[id]
+                .iter()
+                .find(|c| c.action == a)
+                .unwrap()
+                .clone()
+        };
+        assert_eq!(get("d0p1", Action::Delete).support, Support::Unsupported); // EFI
+        assert!(get("d0p1", Action::Delete).reason.contains("EFI"));
+        assert_eq!(get("d0p1", Action::Clone).support, Support::SimulationOnly);
+        assert_eq!(get("d1p3", Action::Resize).support, Support::Unsupported); // FS desconhecido
+        assert_eq!(get("d1p3", Action::Delete).support, Support::SimulationOnly);
+        assert_eq!(get("d0p3", Action::Resize).support, Support::SimulationOnly);
+        // coerência: o que a matriz marca como não suportado, o planejador bloqueia
+        let blocked = simulate(
+            &base(),
+            &[op(
+                "1",
+                OpKind::Resize {
+                    part_id: "d1p3".into(),
+                    new_length_sectors: 10 * GIB,
+                },
+            )],
+        );
+        assert_eq!(blocked.blocked_ops, ["1"]);
     }
 
     #[test]

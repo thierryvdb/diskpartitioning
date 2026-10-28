@@ -17,7 +17,12 @@ vi.mock("@tauri-apps/api/core", () => ({
     calls.push(cmd + (cmd === "load_inventory" ? `:${args?.real}` : ""));
     if (cmd === "get_inventory") return inventory;
     if (cmd === "load_inventory") return { ...inventory, source: args?.real ? "real" : "mock", fingerprint: "f2" };
-    return { disks: [disk], issues: [], blockedOps: (args?.ops ?? []).map((o) => o.id) };
+    const protectedMsg = "Partição EFI é protegida.";
+    const off = (action: string) => ({ action, support: "unsupported", reason: protectedMsg });
+    return {
+      disks: [disk], issues: [], blockedOps: (args?.ops ?? []).map((o) => o.id),
+      capabilities: { p1: ["resize", "move", "format", "delete"].map(off), p2: [] },
+    };
   },
 }));
 
@@ -31,7 +36,7 @@ it("mostra banner de simulação e Aplicar desabilitado", async () => {
 
 it("enfileira exclusão, mostra bloqueio vindo do planejador e desfaz", async () => {
   render(<App />);
-  fireEvent.click(await screen.findByLabelText(/^EFI · FAT32/));
+  fireEvent.click(await screen.findByLabelText(/^C: · NTFS/));
   fireEvent.click(screen.getByText("Excluir (simular)"));
   expect(await screen.findByText(/BLOQUEADA/)).toBeTruthy();
   fireEvent.click(screen.getByText("Desfazer"));
@@ -82,4 +87,13 @@ it("partição selecionada mostra espaço ocupado e livre; sem dado mostra desco
   expect(dl.textContent).toContain("Livre (no FS)768.0 KiB");
   fireEvent.click(screen.getByLabelText(/^EFI · FAT32/));
   expect(screen.getByText("Uso do sistema de arquivos: desconhecido.")).toBeTruthy();
+});
+
+it("ação não suportada fica desabilitada e mostra o motivo", async () => {
+  render(<App />);
+  fireEvent.click(await screen.findByLabelText(/^EFI · FAT32/));
+  expect((screen.getByText("Excluir (simular)") as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText("Indisponível: Partição EFI é protegida.")).toBeTruthy();
+  fireEvent.click(screen.getByLabelText(/^C: · NTFS/));
+  expect((screen.getByText("Excluir (simular)") as HTMLButtonElement).disabled).toBe(false);
 });

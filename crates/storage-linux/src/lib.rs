@@ -7,9 +7,10 @@ use disk_domain::{Discovery, Disk, Fs, Kind, Partition, StorageProvider, Table};
 use serde_json::Value;
 use storage_common::{kind_from_gpt, kind_from_mbr, run_readonly, usable_range};
 
-/// Colunas fixas (sem FSUSED/FSAVAIL: ausentes em util-linux antigo e fariam o lsblk falhar inteiro;
-/// uso dentro do FS fica "desconhecido").
+/// Colunas fixas, sem texto vindo de fora.
 const COLUMNS: &str = "NAME,KNAME,TYPE,SIZE,RM,RO,MODEL,TRAN,LOG-SEC,PHY-SEC,PTTYPE,PARTTYPE,PARTLABEL,PARTN,START,FSTYPE,LABEL";
+/// FSUSED só existe em util-linux recente (e só para FS montado); se faltar, o lsblk falha por inteiro: tenta sem.
+const COLUMNS_WITH_USAGE: &str = "NAME,KNAME,TYPE,SIZE,RM,RO,MODEL,TRAN,LOG-SEC,PHY-SEC,PTTYPE,PARTTYPE,PARTLABEL,PARTN,START,FSTYPE,LABEL,FSUSED";
 
 // lsblk varia entre versões: números podem vir como string, booleanos como "0"/"1".
 fn num(v: &Value) -> Option<u64> {
@@ -117,7 +118,7 @@ pub fn parse(json: &str) -> Result<Discovery, String> {
                 length_sectors: bytes / ss,
                 fs,
                 kind,
-                used_sectors: None,
+                used_sectors: num(&p["fsused"]).map(|b| b / ss),
                 r#virtual: false,
             });
         }
@@ -131,10 +132,8 @@ pub struct LinuxProvider;
 impl LinuxProvider {
     /// EXECUTA o `lsblk` (leitura). Requer autorização do proprietário na máquina de trabalho.
     pub fn discover_with_errors(&self) -> Result<Discovery, String> {
-        parse(&run_readonly(
-            "lsblk",
-            &["--json", "--bytes", "--output", COLUMNS],
-        )?)
+        let run = |cols| run_readonly("lsblk", &["--json", "--bytes", "--output", cols]);
+        parse(&run(COLUMNS_WITH_USAGE).or_else(|_| run(COLUMNS))?)
     }
 }
 
@@ -155,7 +154,7 @@ mod tests {
       {"name":"sda","kname":"sda","type":"disk","size":512110190592,"rm":false,"ro":false,"model":"Mock SATA ","tran":"sata","log-sec":512,"phy-sec":4096,"pttype":"gpt",
        "children":[
         {"name":"sda1","kname":"sda1","type":"part","size":536870912,"start":2048,"partn":1,"parttype":"c12a7328-f81f-11d2-ba4b-00a0c93ec93b","partlabel":"EFI System Partition","fstype":"vfat","label":null},
-        {"name":"sda2","kname":"sda2","type":"part","size":"107374182400","start":"1050624","partn":2,"parttype":"0fc63daf-8483-4772-8e79-3d69d8477de4","partlabel":null,"fstype":"ext4","label":"raiz",
+        {"name":"sda2","kname":"sda2","type":"part","size":"107374182400","start":"1050624","partn":2,"parttype":"0fc63daf-8483-4772-8e79-3d69d8477de4","partlabel":null,"fstype":"ext4","label":"raiz","fsused":"21474836480",
          "children":[{"name":"x","kname":"dm-0","type":"crypt","size":1}]},
         {"name":"sda3","kname":"sda3","type":"part","size":8589934592,"start":210765824,"partn":3,"parttype":"0657fd6d-a4ab-43c4-84e5-0933c84b4f4f","partlabel":null,"fstype":"swap","label":null},
         {"name":"sda4","kname":"sda4","type":"part","size":1073741824,"start":227543040,"partn":4,"parttype":"ca7d7ccb-63ed-4c53-861c-1742536059cc","partlabel":null,"fstype":"crypto_LUKS","label":null}]},
@@ -194,6 +193,11 @@ mod tests {
         assert_eq!(sda.partitions[0].name, "EFI System Partition");
         assert_eq!(sda.partitions[1].name, "raiz");
         assert_eq!(sda.partitions[1].length_sectors, 107_374_182_400 / 512);
+        assert_eq!(sda.partitions[1].used_sectors, Some(21_474_836_480 / 512));
+        assert_eq!(
+            sda.partitions[0].used_sectors, None,
+            "FS sem FSUSED: uso desconhecido"
+        );
         let sdb = &d.disks[1];
         assert_eq!(
             (sdb.table, sdb.model.as_str(), sdb.partitions[0].fs),

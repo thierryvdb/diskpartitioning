@@ -135,12 +135,40 @@ pub struct Issue {
     pub message: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Action {
+    Resize,
+    Move,
+    Format,
+    Delete,
+    Clone,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Support {
+    /// Pode ser simulada; execução real indisponível no MVP 0.1.
+    SimulationOnly,
+    Unsupported,
+}
+
+/// Capacidade de uma ação sobre um alvo, sempre com justificativa (nada de promessa implícita).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Capability {
+    pub action: Action,
+    pub support: Support,
+    pub reason: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Plan {
     pub disks: Vec<Disk>,
     pub issues: Vec<Issue>,
     pub blocked_ops: Vec<String>,
+    /// Capacidades por ID de partição do layout previsto.
+    pub capabilities: std::collections::BTreeMap<String, Vec<Capability>>,
 }
 
 /// Resultado de uma descoberta: dados parciais + erros contextuais por dispositivo.

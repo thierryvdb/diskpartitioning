@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { APP_NAME, fmtSize, gibToSectors } from "../domain/format";
 import { getInventory, loadInventory, simulatePlan } from "../domain/api";
 import { alignUp, end, gaps, usage } from "../domain/layout";
-import type { Disk, Fs, Inventory, Op, Plan } from "../domain/types";
+import type { Capability, Disk, Fs, Inventory, Op, Plan } from "../domain/types";
 import About from "./About";
 import DiskMap, { type Sel } from "./DiskMap";
 import { Overview, type Prefs, Reports, Settings } from "./Pages";
@@ -109,6 +109,8 @@ export default function App() {
   const knownSum = known.reduce((a, p) => a + p.lengthSectors, 0);
   const summary = `Capacidade ${fmtSize(disk.totalSectors, disk)} · Não alocado (tabela de partições) ${fmtSize(unalloc, disk)}` +
     (known.length ? ` · Dentro dos sistemas de arquivos com uso conhecido: usado ${fmtSize(usedSum, disk)}, livre ${fmtSize(knownSum - usedSum, disk)}` : "");
+  const caps = part ? plan.capabilities[part.id] ?? [] : [];
+  const blockedReason = (a: Capability["action"]) => caps.find((c) => c.action === a && c.support === "unsupported")?.reason;
   const nextId = () => String(++seq.current);
 
   const add = (op: Op) => { setOps([...ops, op]); setRedo([]); };
@@ -246,13 +248,16 @@ export default function App() {
           <div className="actions">
             <p><strong>{part.name}</strong> · {part.kind} · {part.fs}</p>
             <PartUsage p={part} d={disk} />
-            <button className="btn" onClick={() => add({ id: nextId(), type: "resize", partId: part.id, newLengthSectors: sectors })}>Redimensionar (simular)</button>
-            <button className="btn" onClick={() => add({ id: nextId(), type: "move", partId: part.id, newStartLba: alignUp(part.startLba + sectors) })}>Mover +tamanho (simular)</button>
+            <button className="btn" disabled={!!blockedReason("resize")} title={blockedReason("resize")} onClick={() => add({ id: nextId(), type: "resize", partId: part.id, newLengthSectors: sectors })}>Redimensionar (simular)</button>
+            <button className="btn" disabled={!!blockedReason("move")} title={blockedReason("move")} onClick={() => add({ id: nextId(), type: "move", partId: part.id, newStartLba: alignUp(part.startLba + sectors) })}>Mover +tamanho (simular)</button>
             <label>Formatar como
               <select value={fs} onChange={(e) => setFs(e.target.value as Fs)}>{FS_OPTIONS.map((f) => <option key={f}>{f}</option>)}</select>
             </label>
-            <button className="btn" onClick={() => add({ id: nextId(), type: "format", partId: part.id, fs })}>Formatar (simular)</button>
-            <button className="btn danger" onClick={() => add({ id: nextId(), type: "delete", partId: part.id })}>Excluir (simular)</button>
+            <button className="btn" disabled={!!blockedReason("format")} title={blockedReason("format")} onClick={() => add({ id: nextId(), type: "format", partId: part.id, fs })}>Formatar (simular)</button>
+            <button className="btn danger" disabled={!!blockedReason("delete")} title={blockedReason("delete")} onClick={() => add({ id: nextId(), type: "delete", partId: part.id })}>Excluir (simular)</button>
+            {[...new Set(caps.filter((c) => c.support === "unsupported").map((c) => c.reason))].map((r) => (
+              <p key={r} className="muted" role="note">Indisponível: {r}</p>
+            ))}
           </div>
         )}
         {gap && (
