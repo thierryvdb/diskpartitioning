@@ -147,3 +147,33 @@ impl StorageProvider for MockProvider {
         ]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Os 3 cenários sintéticos (GPT com EFI/MSR, Linux ext4/swap, USB MBR 4Kn) precisam ser válidos.
+    #[test]
+    fn fixtures_sao_layouts_validos() {
+        let disks = MockProvider.discover();
+        assert_eq!(disks.len(), 3);
+        for d in &disks {
+            let mut parts: Vec<_> = d.partitions.iter().collect();
+            parts.sort_by_key(|p| p.start_lba);
+            for w in parts.windows(2) {
+                assert!(
+                    w[0].start_lba + w[0].length_sectors <= w[1].start_lba,
+                    "{}: sobreposição",
+                    d.id
+                );
+            }
+            let last = parts.last().unwrap();
+            assert!(
+                last.start_lba + last.length_sectors <= d.last_usable_excl_lba,
+                "{}: excede",
+                d.id
+            );
+            assert!(parts[0].start_lba >= d.first_usable_lba);
+        }
+    }
+}

@@ -40,3 +40,18 @@ it("Ajuda → Sobre exibe autoria e licença", async () => {
   expect(screen.getByText(/Thierry Vanden Broucke/)).toBeTruthy();
   expect(screen.getByText(/GNU GPL v3.0\.$/)).toBeTruthy();
 });
+
+it("Visão geral mostra contadores do inventário", async () => {
+  render(<App />);
+  fireEvent.click(await screen.findByText("Visão geral", { selector: ".pages button" }));
+  expect(screen.getByText("Discos", { selector: "dt" })).toBeTruthy();
+  expect(screen.getByText("Partições", { selector: "dt" }).nextSibling?.textContent).toBe("1");
+});
+
+it("Configurações aplica e persiste o tema", async () => {
+  render(<App />);
+  fireEvent.click(await screen.findByText("Configurações", { selector: ".pages button" }));
+  fireEvent.change(screen.getByLabelText("Tema"), { target: { value: "dark" } });
+  expect(document.documentElement.dataset.theme).toBe("dark");
+  expect(localStorage.getItem("prefs")).toContain("dark");
+});

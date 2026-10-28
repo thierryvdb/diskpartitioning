@@ -1,7 +1,7 @@
 ## Principal
 - Leia AGENTS.md, layout.md, attribution.md e DEFINICAO.md
 ## Complementar
-- O nome deste programa é "Global Disk Partitiong"
+- O nome deste programa é "Global Disk Partitioning"
 ## Informação
 - Localização do nosso repositorio : https://github.com/thierryvdb/diskpartitioning
 ## Referenciação

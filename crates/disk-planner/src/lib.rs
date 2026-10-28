@@ -544,8 +544,13 @@ mod no_write_paths {
             "/dev/",
         ];
         let raiz = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
-        let arquivos = ["disk-domain", "disk-planner", "storage-mock"]
-            .map(|c| format!("{raiz}/{c}/src/lib.rs"));
+        let arquivos = [
+            "disk-domain",
+            "disk-planner",
+            "storage-mock",
+            "storage-persistence",
+        ]
+        .map(|c| format!("{raiz}/{c}/src/lib.rs"));
         for f in arquivos
             .iter()
             .chain(std::iter::once(&format!("{raiz}/../src-tauri/src/lib.rs")))

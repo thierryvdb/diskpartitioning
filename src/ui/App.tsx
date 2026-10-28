@@ -1,10 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { APP_NAME, exportJson, fmtSize, gibToSectors } from "../domain/format";
+import { APP_NAME, fmtSize, gibToSectors } from "../domain/format";
 import { listDisks, simulatePlan } from "../domain/api";
 import { alignUp, end, gaps } from "../domain/layout";
 import type { Disk, Fs, Op, Plan } from "../domain/types";
 import About from "./About";
 import DiskMap, { type Sel } from "./DiskMap";
+import { Overview, type Prefs, Reports, Settings } from "./Pages";
+
+const PAGES = [["visao", "Visão geral"], ["discos", "Discos"], ["relatorios", "Relatórios"], ["config", "Configurações"]] as const;
+type Page = (typeof PAGES)[number][0];
+
+const DEFAULT_PREFS: Prefs = { theme: "auto", density: "comfortable" };
+function loadPrefs(): Prefs {
+  try { return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem("prefs") ?? "{}") }; } catch { return DEFAULT_PREFS; }
+}
 
 const FS_OPTIONS: Fs[] = ["ntfs", "fat32", "exfat", "ext4"];
 
@@ -35,6 +44,14 @@ export default function App() {
   const [name, setName] = useState("nova");
   const [target, setTarget] = useState("");
   const seq = useRef(0);
+  const [page, setPage] = useState<Page>("discos");
+  const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = prefs.theme;
+    document.documentElement.dataset.density = prefs.density;
+    try { localStorage.setItem("prefs", JSON.stringify(prefs)); } catch { /* sem storage: só não persiste */ }
+  }, [prefs]);
 
   useEffect(() => { listDisks().then(setBase, (e) => setError(String(e))); }, []);
   useEffect(() => { simulatePlan(ops).then(setPlan, (e) => setError(String(e))); }, [ops]);
@@ -61,11 +78,6 @@ export default function App() {
   const move = (i: number, d: number) => {
     const next = [...ops]; [next[i], next[i + d]] = [next[i + d], next[i]]; setOps(next);
   };
-  const download = () => {
-    const url = URL.createObjectURL(new Blob([exportJson({ schema: 1, source: "mock", ops, plan })], { type: "application/json" }));
-    Object.assign(document.createElement("a"), { href: url, download: "plano-simulado.json" }).click();
-    URL.revokeObjectURL(url);
-  };
 
   return (
     <div className="app">
@@ -73,7 +85,12 @@ export default function App() {
         <img src="/icon.png" alt="" width={32} height={32} />
         <h1>{APP_NAME}</h1>
         <span className="banner" role="status">Modo simulação — nenhuma alteração será gravada em discos.</span>
-        <nav className="menu">
+        <nav className="pages" aria-label="Páginas">
+          {PAGES.map(([id, label]) => (
+            <button key={id} className="btn" aria-current={page === id ? "page" : undefined} onClick={() => setPage(id)}>{label}</button>
+          ))}
+        </nav>
+        <nav className="menu" aria-label="Ajuda">
           <button className="btn" aria-expanded={help} onClick={() => setHelp(!help)}>Ajuda</button>
           {help && (
             <div className="dropdown" role="menu">
@@ -83,6 +100,14 @@ export default function App() {
         </nav>
       </header>
 
+      {page === "visao" && <main className="main wide"><Overview base={base} plan={plan} ops={ops} /></main>}
+      {page === "relatorios" && (
+        <main className="main wide">
+          <Reports ops={ops} plan={plan} onImport={(o) => { setOps(o); setRedo([]); seq.current = o.length; }} />
+        </main>
+      )}
+      {page === "config" && <main className="main wide"><Settings prefs={prefs} onChange={setPrefs} /></main>}
+      {page === "discos" && <>
       <aside className="side" aria-label="Discos">
         <h2>Discos</h2>
         {base.map((d, i) => (
@@ -177,6 +202,8 @@ export default function App() {
         )}
       </aside>
 
+      </>}
+
       <section className="queue" aria-label="Fila de operações simuladas">
         <div className="qhead">
           <h2>Fila pendente: {ops.length} simulação(ões)</h2>
@@ -184,7 +211,6 @@ export default function App() {
             <button className="btn" disabled={!ops.length} onClick={undo}>Desfazer</button>
             <button className="btn" disabled={!redo.length} onClick={redoOp}>Refazer</button>
             <button className="btn" disabled={!ops.length} onClick={() => { setOps([]); setRedo([]); }}>Limpar</button>
-            <button className="btn" onClick={download}>Exportar JSON</button>
           </span>
         </div>
         <ol>

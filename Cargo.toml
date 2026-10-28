@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/disk-domain", "crates/disk-planner", "crates/storage-mock", "src-tauri"]
+members = ["crates/disk-domain", "crates/disk-planner", "crates/storage-mock", "crates/storage-persistence", "src-tauri"]
 
 [workspace.package]
 version = "0.1.0"

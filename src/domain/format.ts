@@ -4,8 +4,10 @@ export const APP_NAME = "Global Disk Partitioning";
 export const REPO_URL = "https://github.com/thierryvdb/diskpartitioning";
 
 /** Setores -> "12.3 GiB" (só exibição; cálculos ficam no Rust). */
-export function fmtSize(sectors: number, d: Pick<Disk, "sectorSize">): string {
-  let v = sectors * d.sectorSize;
+export const fmtSize = (sectors: number, d: Pick<Disk, "sectorSize">) => fmtBytes(sectors * d.sectorSize);
+
+export function fmtBytes(bytes: number): string {
+  let v = bytes;
   const units = ["B", "KiB", "MiB", "GiB", "TiB"];
   let i = 0;
   while (v >= 1024 && i < 4) { v /= 1024; i++; }
