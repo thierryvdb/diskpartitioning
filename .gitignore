@@ -1,0 +1,45 @@
+# Segredos e credenciais
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+*.crt
+secrets/
+credentials*.json
+
+# Claude Code / agentes (config local, pode conter permissões e caminhos)
+.claude/
+graphify-out/
+
+# Snapshots e diagnósticos reais (podem conter serial/WWN de discos)
+snapshots/
+diagnostics/
+*.snapshot.json
+*.log
+
+# Imagens de disco e artefatos de teste (nunca versionar)
+*.vhd
+*.vhdx
+*.img
+*.iso
+*.qcow2
+*.raw
+
+# Build / dependências
+node_modules/
+target/
+dist/
+apps/desktop/src-tauri/gen/
+*.exe
+*.msi
+
+# SO / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Tauri
+src-tauri/gen/

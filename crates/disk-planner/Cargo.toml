@@ -1,0 +1,12 @@
+[package]
+name = "disk-planner"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+disk-domain = { path = "../disk-domain" }
+serde.workspace = true
+
+[dev-dependencies]
+storage-mock = { path = "../storage-mock" }
