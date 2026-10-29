@@ -62,7 +62,11 @@ pub struct Approval {
 
 /// FNV-1a do plano; a aprovação só vale para exatamente este plano.
 pub fn plan_hash(ops: &[Op]) -> u64 {
-    format!("{ops:?}").bytes().fold(0xcbf29ce484222325, |h, b| {
+    plan_hash_str(&format!("{ops:?}"))
+}
+
+pub fn plan_hash_str(s: &str) -> u64 {
+    s.bytes().fold(0xcbf29ce484222325, |h, b| {
         (h ^ b as u64).wrapping_mul(0x100000001b3)
     })
 }

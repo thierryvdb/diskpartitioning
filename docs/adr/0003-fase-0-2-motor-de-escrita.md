@@ -19,3 +19,6 @@ Status: aceito pelo proprietário em 2026-10-29 (início da fase 0.2; teste real
 
 ## Evidência do primeiro teste real (executado pelo proprietário, 2026-10-29)
 Alvo `2B7C06071070`, plano `delete 0` + `create 0 2048 2097152 07` (hash 14521481411146062566). Saída do `gdp-mbr`: "OK: gravado e verificado por releitura"; MBR de `{0x0C, 8064, 60620928}` para `{0x07, 2048, 2097152}`. Cobre: criar/excluir partição primária em MBR. Não cobre: formatação, GPT, resize, mover, clonar; não foi verificada a visão do Windows após a gravação.
+
+## Formatação (`gdp-format`)
+Classe de operação aprovada pelo proprietário: formatar FAT32 e NTFS (em sequência) a partição 1 do alvo `2B7C06071070`. Usa `Format-Volume` do Windows (sem formatador próprio), com script fixo; só `u32` e o enum FAT32/NTFS entram no comando. Reconfere a identidade do disco imediatamente antes (USB, não boot/sistema, serial e tamanho), exige aprovação por hash (disco+serial+tamanho+partição+fs) e verifica o sistema de arquivos depois. Simulação por padrão. Limites: não força desmontagem; sem rollback (formatar é destrutivo por natureza).

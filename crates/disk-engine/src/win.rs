@@ -68,3 +68,95 @@ impl BlockDevice for WinDevice {
         self.file.sync_all()
     }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fs {
+    Fat32,
+    Ntfs,
+}
+
+impl Fs {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_ascii_uppercase().as_str() {
+            "FAT32" => Some(Self::Fat32),
+            "NTFS" => Some(Self::Ntfs),
+            _ => None,
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Fat32 => "FAT32",
+            Self::Ntfs => "NTFS",
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct PartInfo {
+    pub offset: u64,
+    pub size: u64,
+    pub fs: String,
+}
+
+/// Somente leitura. `disk`/`part` são u32: nenhum texto externo entra no script.
+pub fn partition_info(disk: u32, part: u32) -> Result<PartInfo, String> {
+    let script = format!(
+        "$p=Get-Partition -DiskNumber {disk} -PartitionNumber {part} -ErrorAction Stop; \
+         $v=$p | Get-Volume -ErrorAction SilentlyContinue; \"$($p.Offset)|$($p.Size)|$($v.FileSystem)\""
+    );
+    let out = storage_common::run_readonly(
+        "powershell",
+        &["-NoProfile", "-NonInteractive", "-Command", &script],
+    )?;
+    let f: Vec<&str> = out.trim().split('|').collect();
+    if f.len() != 3 {
+        return Err(format!("saída inesperada: {out:?}"));
+    }
+    Ok(PartInfo {
+        offset: f[0].parse().map_err(|_| "offset inválido")?,
+        size: f[1].parse().map_err(|_| "tamanho inválido")?,
+        fs: f[2].to_string(),
+    })
+}
+
+/// ÚNICO ponto de formatação. Reconfere a identidade do disco (USB, não boot/sistema, serial e tamanho)
+/// imediatamente antes e verifica o sistema de arquivos resultante depois.
+pub fn format_partition(disk: u32, target: &Identity, part: u32, fs: Fs) -> Result<(), String> {
+    if query_identity(disk)? != *target {
+        return Err("o disco atual não é o alvo aprovado".into());
+    }
+    partition_info(disk, part)?; // a partição precisa existir neste disco
+    let script = format!(
+        "Get-Partition -DiskNumber {disk} -PartitionNumber {part} -ErrorAction Stop | \
+         Format-Volume -FileSystem {} -Confirm:$false -ErrorAction Stop | Out-Null",
+        fs.name()
+    );
+    let st = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !st.status.success() {
+        return Err(format!(
+            "Format-Volume falhou: {}",
+            String::from_utf8_lossy(&st.stderr)
+        ));
+    }
+    let after = partition_info(disk, part)?;
+    if !after.fs.eq_ignore_ascii_case(fs.name()) {
+        return Err(format!(
+            "verificação falhou: sistema de arquivos é {:?}",
+            after.fs
+        ));
+    }
+    Ok(())
+}
+
+/// Hash da aprovação: amarra disco, serial, tamanho, partição e sistema de arquivos.
+pub fn format_hash(disk: u32, target: &Identity, part: u32, fs: Fs) -> u64 {
+    crate::plan_hash_str(&format!(
+        "format disk={disk} serial={} size={} part={part} fs={}",
+        target.serial,
+        target.size_bytes,
+        fs.name()
+    ))
+}
