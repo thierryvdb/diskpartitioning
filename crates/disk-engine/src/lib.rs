@@ -393,5 +393,6 @@ impl Fs {
 }
 
 pub mod apply;
+pub mod gpt;
 #[cfg(windows)]
 pub mod win;

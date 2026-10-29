@@ -32,3 +32,6 @@ Alvo `2B7C06071070`, partição 1 (início 1048576, 1073741824 bytes). `gdp-form
 - Formatar uma partição recém-criada usa `Update-Disk` e localiza a partição pelo deslocamento; se o Windows ainda não a enxergar, o app orienta reconectar o disco.
 - O botão Aplicar fica desabilitado no mock, com fila vazia ou com operações bloqueadas.
 - Teste real do fluxo pelo app: pendente de execução pelo proprietário.
+
+## GPT (somente em memória)
+`disk_engine::gpt`: Init (substitui o MBR por GPT vazio, destruindo a tabela atual), Add e Remove de entradas, com MBR protetor, cabeçalho primário e de backup, CRC32 conferido por vetor conhecido, pré-imagem das duas regiões, releitura e rollback. Testado apenas em `MemDevice` (incluindo falha entre o backup e o primário). **Não** está ligado ao app nem a ferramenta alguma; teste real de GPT exige nova autorização por classe de operação.
