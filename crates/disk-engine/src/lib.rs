@@ -26,7 +26,10 @@ pub enum Error {
     Invalid(String),
     Io(String),
     /// A escrita falhou ou a releitura divergiu; `rolled_back` diz se a pré-imagem foi restaurada e verificada.
-    Aborted { reason: String, rolled_back: bool },
+    Aborted {
+        reason: String,
+        rolled_back: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,8 +42,15 @@ pub struct Entry {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Op {
-    Create { slot: usize, start: u32, sectors: u32, kind: u8 },
-    Delete { slot: usize },
+    Create {
+        slot: usize,
+        start: u32,
+        sectors: u32,
+        kind: u8,
+    },
+    Delete {
+        slot: usize,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -52,12 +62,15 @@ pub struct Approval {
 
 /// FNV-1a do plano; a aprovação só vale para exatamente este plano.
 pub fn plan_hash(ops: &[Op]) -> u64 {
-    format!("{ops:?}").bytes().fold(0xcbf29ce484222325, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3))
+    format!("{ops:?}").bytes().fold(0xcbf29ce484222325, |h, b| {
+        (h ^ b as u64).wrapping_mul(0x100000001b3)
+    })
 }
 
 fn sector0(dev: &dyn BlockDevice) -> Result<[u8; 512], Error> {
     let mut s = [0u8; 512];
-    dev.read_at(0, &mut s).map_err(|e| Error::Io(e.to_string()))?;
+    dev.read_at(0, &mut s)
+        .map_err(|e| Error::Io(e.to_string()))?;
     Ok(s)
 }
 
@@ -66,7 +79,12 @@ fn parse(s: &[u8; 512]) -> [Option<Entry>; 4] {
         let e = &s[446 + 16 * i..462 + 16 * i];
         let start = u32::from_le_bytes(e[8..12].try_into().unwrap());
         let sectors = u32::from_le_bytes(e[12..16].try_into().unwrap());
-        (e[4] != 0).then_some(Entry { boot: e[0], kind: e[4], start, sectors })
+        (e[4] != 0).then_some(Entry {
+            boot: e[0],
+            kind: e[4],
+            start,
+            sectors,
+        })
     })
 }
 
@@ -82,18 +100,31 @@ fn validate(table: &[Option<Entry>; 4], op: &Op, disk_sectors: u64) -> Result<()
     let bad = |m: &str| Err(Error::Invalid(m.into()));
     match *op {
         Op::Delete { slot } if slot >= 4 || table[slot].is_none() => bad("slot inexistente"),
-        Op::Create { slot, start, sectors, kind } => {
+        Op::Create {
+            slot,
+            start,
+            sectors,
+            kind,
+        } => {
             if slot >= 4 || table[slot].is_some() {
                 return bad("slot inválido ou ocupado");
             }
-            if kind == 0 || sectors == 0 || !(start as u64).is_multiple_of(ALIGN) || (start as u64) < ALIGN {
-                return bad("tipo/tamanho/alinhamento inválido (início ≥ 1 MiB, múltiplo de 1 MiB)");
+            if kind == 0
+                || sectors == 0
+                || !(start as u64).is_multiple_of(ALIGN)
+                || (start as u64) < ALIGN
+            {
+                return bad(
+                    "tipo/tamanho/alinhamento inválido (início ≥ 1 MiB, múltiplo de 1 MiB)",
+                );
             }
             let end = start as u64 + sectors as u64;
             if end > disk_sectors {
                 return bad("partição ultrapassa o disco");
             }
-            if table.iter().flatten().any(|e| (start as u64) < e.start as u64 + e.sectors as u64 && (e.start as u64) < end) {
+            if table.iter().flatten().any(|e| {
+                (start as u64) < e.start as u64 + e.sectors as u64 && (e.start as u64) < end
+            }) {
                 return bad("sobrepõe outra partição");
             }
             Ok(())
@@ -104,7 +135,12 @@ fn validate(table: &[Option<Entry>; 4], op: &Op, disk_sectors: u64) -> Result<()
 
 fn apply_to(s: &mut [u8; 512], op: &Op) {
     let (slot, e) = match *op {
-        Op::Create { slot, start, sectors, kind } => {
+        Op::Create {
+            slot,
+            start,
+            sectors,
+            kind,
+        } => {
             let mut e = [0u8; 16];
             e[4] = kind;
             e[8..12].copy_from_slice(&start.to_le_bytes());
@@ -116,25 +152,43 @@ fn apply_to(s: &mut [u8; 512], op: &Op) {
     s[446 + 16 * slot..462 + 16 * slot].copy_from_slice(&e);
 }
 
-/// Aplica `ops` ao MBR de `dev`. Nada é escrito se qualquer validação falhar.
-pub fn execute(dev: &mut dyn BlockDevice, target: &Identity, approval: &Approval, ops: &[Op]) -> Result<(), Error> {
-    if dev.identity() != target || target.serial.is_empty() {
-        return Err(Error::TargetMismatch);
-    }
-    if approval.serial != target.serial || approval.size_bytes != target.size_bytes || approval.plan_hash != plan_hash(ops) {
-        return Err(Error::NotApproved);
-    }
-    let before = sector0(dev)?; // journal: pré-imagem
+/// Valida `ops` contra o MBR atual sem escrever; devolve (setor 0 atual, setor 0 resultante).
+pub fn check(dev: &dyn BlockDevice, ops: &[Op]) -> Result<([u8; 512], [u8; 512]), Error> {
+    let before = sector0(dev)?;
     let mut after = before;
     let mut table = read_table(dev)?;
     for op in ops {
-        validate(&table, op, target.size_bytes / SECTOR)?;
+        validate(&table, op, dev.identity().size_bytes / SECTOR)?;
         apply_to(&mut after, op);
         table = parse(&after);
     }
+    Ok((before, after))
+}
+
+/// Aplica `ops` ao MBR de `dev`. Nada é escrito se qualquer validação falhar.
+pub fn execute(
+    dev: &mut dyn BlockDevice,
+    target: &Identity,
+    approval: &Approval,
+    ops: &[Op],
+) -> Result<(), Error> {
+    if dev.identity() != target || target.serial.is_empty() {
+        return Err(Error::TargetMismatch);
+    }
+    if approval.serial != target.serial
+        || approval.size_bytes != target.size_bytes
+        || approval.plan_hash != plan_hash(ops)
+    {
+        return Err(Error::NotApproved);
+    }
+    let (before, after) = check(dev, ops)?; // before = journal: pré-imagem
     let abort = |dev: &mut dyn BlockDevice, reason: String| {
-        let rolled_back = dev.write_at(0, &before).is_ok() && sector0(dev).map(|s| s == before).unwrap_or(false);
-        Err(Error::Aborted { reason, rolled_back })
+        let rolled_back =
+            dev.write_at(0, &before).is_ok() && sector0(dev).map(|s| s == before).unwrap_or(false);
+        Err(Error::Aborted {
+            reason,
+            rolled_back,
+        })
     };
     if let Err(e) = dev.write_at(0, &after) {
         return abort(dev, e.to_string());
@@ -159,7 +213,15 @@ impl MemDevice {
         let mut data = vec![0u8; size_bytes as usize];
         data[510] = 0x55;
         data[511] = 0xAA;
-        Self { id: Identity { serial: serial.into(), size_bytes }, data, fail_write: None, corrupt: false }
+        Self {
+            id: Identity {
+                serial: serial.into(),
+                size_bytes,
+            },
+            data,
+            fail_write: None,
+            corrupt: false,
+        }
     }
 }
 
@@ -169,7 +231,11 @@ impl BlockDevice for MemDevice {
     }
     fn read_at(&self, off: u64, buf: &mut [u8]) -> io::Result<()> {
         let o = off as usize;
-        buf.copy_from_slice(self.data.get(o..o + buf.len()).ok_or_else(|| io::Error::other("fora do disco"))?);
+        buf.copy_from_slice(
+            self.data
+                .get(o..o + buf.len())
+                .ok_or_else(|| io::Error::other("fora do disco"))?,
+        );
         Ok(())
     }
     fn write_at(&mut self, off: u64, d: &[u8]) -> io::Result<()> {
@@ -181,7 +247,10 @@ impl BlockDevice for MemDevice {
             self.fail_write = Some(n - 1);
         }
         let o = off as usize;
-        self.data.get_mut(o..o + d.len()).ok_or_else(|| io::Error::other("fora do disco"))?.copy_from_slice(d);
+        self.data
+            .get_mut(o..o + d.len())
+            .ok_or_else(|| io::Error::other("fora do disco"))?
+            .copy_from_slice(d);
         if self.corrupt {
             self.data[o + 446] ^= 0xFF;
         }
@@ -200,10 +269,19 @@ mod tests {
         (d, id)
     }
     fn approve(id: &Identity, ops: &[Op]) -> Approval {
-        Approval { serial: id.serial.clone(), size_bytes: id.size_bytes, plan_hash: plan_hash(ops) }
+        Approval {
+            serial: id.serial.clone(),
+            size_bytes: id.size_bytes,
+            plan_hash: plan_hash(ops),
+        }
     }
     fn create(slot: usize, start: u32, sectors: u32) -> Op {
-        Op::Create { slot, start, sectors, kind: 0x07 }
+        Op::Create {
+            slot,
+            start,
+            sectors,
+            kind: 0x07,
+        }
     }
     fn empty(d: &MemDevice) -> bool {
         read_table(d).unwrap().iter().all(Option::is_none)
@@ -226,8 +304,14 @@ mod tests {
     fn recusa_alvo_diferente_e_aprovacao_de_outro_plano() {
         let (mut d, id) = setup();
         let ops = [create(0, 2048, 1000)];
-        let outro = Identity { serial: "OUTRO".into(), size_bytes: id.size_bytes };
-        assert_eq!(execute(&mut d, &outro, &approve(&outro, &ops), &ops), Err(Error::TargetMismatch));
+        let outro = Identity {
+            serial: "OUTRO".into(),
+            size_bytes: id.size_bytes,
+        };
+        assert_eq!(
+            execute(&mut d, &outro, &approve(&outro, &ops), &ops),
+            Err(Error::TargetMismatch)
+        );
         let ap = approve(&id, &[create(0, 2048, 2000)]);
         assert_eq!(execute(&mut d, &id, &ap, &ops), Err(Error::NotApproved));
         assert!(empty(&d));
@@ -242,7 +326,10 @@ mod tests {
             vec![create(0, 2048, u32::MAX)],                    // além do disco
             vec![Op::Delete { slot: 3 }],                       // slot vazio
         ] {
-            assert!(matches!(execute(&mut d, &id, &approve(&id, &ops), &ops), Err(Error::Invalid(_))));
+            assert!(matches!(
+                execute(&mut d, &id, &approve(&id, &ops), &ops),
+                Err(Error::Invalid(_))
+            ));
         }
         assert!(empty(&d));
     }
@@ -253,7 +340,13 @@ mod tests {
         d.fail_write = Some(0);
         let ops = [create(0, 2048, 1000)];
         // a 1ª escrita falha; o rollback (2ª escrita) funciona e a tabela segue vazia
-        assert!(matches!(execute(&mut d, &id, &approve(&id, &ops), &ops), Err(Error::Aborted { rolled_back: true, .. })));
+        assert!(matches!(
+            execute(&mut d, &id, &approve(&id, &ops), &ops),
+            Err(Error::Aborted {
+                rolled_back: true,
+                ..
+            })
+        ));
         assert!(empty(&d));
     }
 
@@ -263,7 +356,13 @@ mod tests {
         d.corrupt = true;
         let ops = [create(0, 2048, 1000)];
         // a corrupção também atinge o rollback, que então é reportado como não verificado
-        assert!(matches!(execute(&mut d, &id, &approve(&id, &ops), &ops), Err(Error::Aborted { rolled_back: false, .. })));
+        assert!(matches!(
+            execute(&mut d, &id, &approve(&id, &ops), &ops),
+            Err(Error::Aborted {
+                rolled_back: false,
+                ..
+            })
+        ));
     }
 }
 

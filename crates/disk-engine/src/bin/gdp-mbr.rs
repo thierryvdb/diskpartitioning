@@ -18,29 +18,48 @@ fn main() {
 
 #[cfg(windows)]
 fn run() -> Result<(), String> {
-    use disk_engine::{execute, plan_hash, read_table, win::WinDevice, Approval, BlockDevice, Identity, Op};
+    use disk_engine::{
+        check, execute, plan_hash, read_table, win::WinDevice, Approval, BlockDevice, Identity, Op,
+    };
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     let get = |k: &str| args.windows(2).find(|w| w[0] == k).map(|w| w[1].clone());
-    let disk: u32 = get("--disk").ok_or("falta --disk")?.parse().map_err(|_| "--disk inválido")?;
+    let disk: u32 = get("--disk")
+        .ok_or("falta --disk")?
+        .parse()
+        .map_err(|_| "--disk inválido")?;
     let target = Identity {
         serial: get("--serial").ok_or("falta --serial")?,
-        size_bytes: get("--size").ok_or("falta --size")?.parse().map_err(|_| "--size inválido")?,
+        size_bytes: get("--size")
+            .ok_or("falta --size")?
+            .parse()
+            .map_err(|_| "--size inválido")?,
     };
-    let confirm: Option<u64> = get("--confirm").map(|h| h.parse().map_err(|_| "--confirm inválido")).transpose()?;
+    let confirm: Option<u64> = get("--confirm")
+        .map(|h| h.parse().map_err(|_| "--confirm inválido"))
+        .transpose()?;
 
     let mut ops = Vec::new();
     for w in args.windows(2).filter(|w| w[0] == "--op") {
         let p: Vec<&str> = w[1].split_whitespace().collect();
-        let num = |i: usize| p.get(i).and_then(|s| s.parse::<u32>().ok()).ok_or(format!("op inválida: {}", w[1]));
+        let num = |i: usize| {
+            p.get(i)
+                .and_then(|s| s.parse::<u32>().ok())
+                .ok_or(format!("op inválida: {}", w[1]))
+        };
         ops.push(match p.first().copied() {
             Some("create") => Op::Create {
                 slot: num(1)? as usize,
                 start: num(2)?,
                 sectors: num(3)?,
-                kind: p.get(4).and_then(|s| u8::from_str_radix(s, 16).ok()).ok_or(format!("op inválida: {}", w[1]))?,
+                kind: p
+                    .get(4)
+                    .and_then(|s| u8::from_str_radix(s, 16).ok())
+                    .ok_or(format!("op inválida: {}", w[1]))?,
             },
-            Some("delete") => Op::Delete { slot: num(1)? as usize },
+            Some("delete") => Op::Delete {
+                slot: num(1)? as usize,
+            },
             _ => return Err(format!("op inválida: {}", w[1])),
         });
     }
@@ -50,16 +69,32 @@ fn run() -> Result<(), String> {
 
     let hash = plan_hash(&ops);
     let mut dev = WinDevice::open(disk, confirm.is_some())?;
-    println!("Disco {disk}: serial {} · {} bytes", dev.identity().serial, dev.identity().size_bytes);
-    println!("MBR atual: {:#?}", read_table(&dev).map_err(|e| format!("{e:?}"))?);
+    println!(
+        "Disco {disk}: serial {} · {} bytes",
+        dev.identity().serial,
+        dev.identity().size_bytes
+    );
+    println!(
+        "MBR atual: {:#?}",
+        read_table(&dev).map_err(|e| format!("{e:?}"))?
+    );
     println!("Plano: {ops:#?}\nHash do plano: {hash}");
 
+    check(&dev, &ops).map_err(|e| format!("plano inválido para este disco: {e:?}"))?;
+    println!("Plano VÁLIDO para o MBR atual.");
     let Some(c) = confirm else {
         println!("SIMULAÇÃO: nada foi gravado. Para gravar, repita com --confirm {hash}");
         return Ok(());
     };
-    let approval = Approval { serial: target.serial.clone(), size_bytes: target.size_bytes, plan_hash: c };
+    let approval = Approval {
+        serial: target.serial.clone(),
+        size_bytes: target.size_bytes,
+        plan_hash: c,
+    };
     execute(&mut dev, &target, &approval, &ops).map_err(|e| format!("{e:?}"))?;
-    println!("OK: gravado e verificado por releitura. MBR agora: {:#?}", read_table(&dev).map_err(|e| format!("{e:?}"))?);
+    println!(
+        "OK: gravado e verificado por releitura. MBR agora: {:#?}",
+        read_table(&dev).map_err(|e| format!("{e:?}"))?
+    );
     Ok(())
 }

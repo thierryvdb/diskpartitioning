@@ -16,7 +16,10 @@ pub fn query_identity(number: u32) -> Result<Identity, String> {
     let script = format!(
         "$d=Get-Disk -Number {number}; \"$($d.SerialNumber.Trim())|$($d.Size)|$($d.BusType)|$($d.IsBoot)|$($d.IsSystem)\""
     );
-    let out = storage_common::run_readonly("powershell", &["-NoProfile", "-NonInteractive", "-Command", &script])?;
+    let out = storage_common::run_readonly(
+        "powershell",
+        &["-NoProfile", "-NonInteractive", "-Command", &script],
+    )?;
     let f: Vec<&str> = out.trim().split('|').collect();
     if f.len() != 5 {
         return Err(format!("saída inesperada do Get-Disk: {out:?}"));
@@ -27,7 +30,10 @@ pub fn query_identity(number: u32) -> Result<Identity, String> {
     if f[3] != "False" || f[4] != "False" {
         return Err(format!("disco {number} é de boot/sistema"));
     }
-    Ok(Identity { serial: f[0].to_string(), size_bytes: f[1].parse().map_err(|_| "tamanho inválido")? })
+    Ok(Identity {
+        serial: f[0].to_string(),
+        size_bytes: f[1].parse().map_err(|_| "tamanho inválido")?,
+    })
 }
 
 impl WinDevice {
