@@ -16,3 +16,6 @@ Status: aceito pelo proprietário em 2026-10-29 (início da fase 0.2; teste real
 - `disk-engine::win` abre `\.\PhysicalDriveN` e recusa disco não-USB, de boot ou de sistema, e identidade que mude entre abertura e leitura.
 - `gdp-mbr` (binário separado, fora do app): padrão é simulação; só grava com `--confirm <hash do plano>`. Não solicita elevação: o proprietário o executa num terminal de administrador.
 - Nenhuma execução real foi feita pelo agente.
+
+## Evidência do primeiro teste real (executado pelo proprietário, 2026-10-29)
+Alvo `2B7C06071070`, plano `delete 0` + `create 0 2048 2097152 07` (hash 14521481411146062566). Saída do `gdp-mbr`: "OK: gravado e verificado por releitura"; MBR de `{0x0C, 8064, 60620928}` para `{0x07, 2048, 2097152}`. Cobre: criar/excluir partição primária em MBR. Não cobre: formatação, GPT, resize, mover, clonar; não foi verificada a visão do Windows após a gravação.
