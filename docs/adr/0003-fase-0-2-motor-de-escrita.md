@@ -35,3 +35,10 @@ Alvo `2B7C06071070`, partição 1 (início 1048576, 1073741824 bytes). `gdp-form
 
 ## GPT (somente em memória)
 `disk_engine::gpt`: Init (substitui o MBR por GPT vazio, destruindo a tabela atual), Add e Remove de entradas, com MBR protetor, cabeçalho primário e de backup, CRC32 conferido por vetor conhecido, pré-imagem das duas regiões, releitura e rollback. Testado apenas em `MemDevice` (incluindo falha entre o backup e o primário). **Não** está ligado ao app nem a ferramenta alguma; teste real de GPT exige nova autorização por classe de operação.
+
+## Aplicar no app: GPT, conversão MBR→GPT, redimensionar e rótulo (autorizado em 2026-10-29: "prossiga com o gpt e demais funcionalidade")
+- O mock foi removido do app: o inventário começa vazio e só carrega discos reais após confirmação.
+- `apply::translate` agora cobre discos GPT (criar/excluir/formatar), **converter MBR→GPT preservando as partições** (Init + uma entrada por partição; tem de ser a 1ª operação da fila), **redimensionar NTFS** (`Resize-Partition`, tabela + NTFS pelo Windows) e **rótulo** (`Set-Volume`, rótulo restrito a `[A-Za-z0-9 _.-]`).
+- A prévia valida o plano contra o MBR/GPT reais (sem escrever). O hash cobre MBR, GPT, formatações, redimensionamentos e rótulos; os GUIDs são determinísticos para o hash bater entre prévia e aplicação.
+- Continua recusado na aplicação real: mover, clonar, mesclar, dividir, tipo de partição, GPT→MBR, exFAT/ext4/swap.
+- Testes reais dessas classes: **pendentes, um a um, com a confirmação do proprietário** (conversão MBR→GPT apaga o MBR atual; redimensionar NTFS mexe em dados).

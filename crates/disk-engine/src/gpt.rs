@@ -50,7 +50,7 @@ pub fn crc32(data: &[u8]) -> u32 {
     !c
 }
 
-type Table = (/* disk_guid */ [u8; 16], Vec<Option<GptEntry>>);
+pub type Table = (/* disk_guid */ [u8; 16], Vec<Option<GptEntry>>);
 
 fn serialize_array(entries: &[Option<GptEntry>]) -> Vec<u8> {
     let mut a = vec![0u8; N_ENTRIES * ENTRY];
@@ -204,6 +204,18 @@ fn apply_op(t: &mut Option<Table>, op: &GOp, total: u64) -> Result<(), Error> {
     Ok(())
 }
 
+/// Valida `ops` contra o GPT atual (ou disco sem GPT) sem escrever; devolve a tabela resultante.
+pub fn plan(dev: &dyn BlockDevice, ops: &[GOp], total: u64) -> Result<Table, Error> {
+    if total < 2 * FIRST_USABLE + 2048 {
+        return Err(Error::Invalid("disco pequeno demais".into()));
+    }
+    let mut t = read_gpt(dev).ok();
+    for op in ops {
+        apply_op(&mut t, op, total)?;
+    }
+    t.ok_or(Error::Invalid("plano vazio".into()))
+}
+
 pub fn execute_gpt(
     dev: &mut dyn BlockDevice,
     target: &Identity,
@@ -220,14 +232,7 @@ pub fn execute_gpt(
         return Err(Error::NotApproved);
     }
     let total = target.size_bytes / SECTOR;
-    if total < 2 * FIRST_USABLE + 2048 {
-        return Err(Error::Invalid("disco pequeno demais".into()));
-    }
-    let mut t = read_gpt(dev).ok();
-    for op in ops {
-        apply_op(&mut t, op, total)?;
-    }
-    let t = t.ok_or(Error::Invalid("plano vazio".into()))?;
+    let t = plan(dev, ops, total)?;
     let (new_p, new_b) = (primary(&t, total), backup(&t, total));
     let (p_lba, b_lba) = (0, total - 1 - ARRAY_SECTORS);
     let (old_p, old_b) = (

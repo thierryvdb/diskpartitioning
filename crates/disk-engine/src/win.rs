@@ -1,6 +1,7 @@
 //! Backend Windows do `BlockDevice` (ADR 0003). Só é usado pela ferramenta de linha de comando
 //! `gdp-mbr`, nunca pelo app. A identidade vem do `Get-Disk` (somente leitura) e é recusado
 //! qualquer disco que não seja USB, ou que seja de boot/sistema.
+use crate::apply::Layout;
 pub use crate::Fs;
 use crate::{BlockDevice, Identity};
 use std::fs::{File, OpenOptions};
@@ -159,12 +160,34 @@ fn disk_number(id: &str) -> Result<u32, String> {
 pub fn preview(disk: &disk_domain::Disk, ops: &[disk_domain::Op]) -> Result<Preview, String> {
     let n = disk_number(&disk.id)?;
     let dev = WinDevice::open(n, false)?;
-    let table = crate::read_table(&dev).map_err(|e| format!("{e:?}"))?;
-    let translated = crate::apply::translate(disk, &table, ops)?;
     let identity = dev.identity().clone();
+    let layout = match disk.table {
+        disk_domain::Table::Mbr => {
+            Layout::Mbr(crate::read_table(&dev).map_err(|e| format!("{e:?}"))?)
+        }
+        disk_domain::Table::Gpt => {
+            Layout::Gpt(crate::gpt::read_gpt(&dev).map_err(|e| format!("{e:?}"))?.1)
+        }
+    };
+    let translated = crate::apply::translate(disk, &layout, &identity.serial, ops)?;
+    // Valida contra o disco real sem escrever: erros aparecem na prévia, não na aplicação.
+    if !translated.mbr.is_empty() {
+        crate::check(&dev, &translated.mbr)
+            .map_err(|e| format!("plano inválido para o MBR: {e:?}"))?;
+    }
+    if !translated.gpt.is_empty() {
+        crate::gpt::plan(&dev, &translated.gpt, identity.size_bytes / crate::SECTOR)
+            .map_err(|e| format!("plano inválido para o GPT: {e:?}"))?;
+    }
     let hash = crate::plan_hash_str(&format!(
-        "apply disk={n} serial={} size={} {:?} {:?}",
-        identity.serial, identity.size_bytes, translated.mbr, translated.formats
+        "apply disk={n} serial={} size={} {:?} {:?} {:?} {:?} {:?}",
+        identity.serial,
+        identity.size_bytes,
+        translated.mbr,
+        translated.gpt,
+        translated.formats,
+        translated.resizes,
+        translated.labels
     ));
     Ok(Preview {
         disk_number: n,
@@ -201,38 +224,96 @@ pub fn apply(
         crate::execute(&mut dev, &pv.identity, &ap, &t.mbr).map_err(|e| format!("{e:?}"))?;
         log.push("Tabela MBR gravada e verificada por releitura.".to_string());
     }
-    if !t.formats.is_empty() {
+    if !t.gpt.is_empty() {
+        let mut dev = WinDevice::open(n, true)?;
+        let ap = crate::Approval {
+            serial: pv.identity.serial.clone(),
+            size_bytes: pv.identity.size_bytes,
+            plan_hash: crate::gpt::gpt_plan_hash(&t.gpt),
+        };
+        crate::gpt::execute_gpt(&mut dev, &pv.identity, &ap, &t.gpt)
+            .map_err(|e| format!("{e:?}"))?;
+        log.push("Tabela GPT (primária e backup) gravada e verificada por releitura.".to_string());
+    }
+    if !(t.formats.is_empty() && t.resizes.is_empty() && t.labels.is_empty()) {
         // Pede ao Windows para reler a tabela (não altera o disco) e só então localiza as partições.
-        let _ = std::process::Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                &format!("Update-Disk -Number {n}"),
-            ])
-            .output();
+        ps(&format!("Update-Disk -Number {n}")).ok();
+    }
+    let number_at = |start_lba: u64| {
+        ps(&format!(
+            "(Get-Partition -DiskNumber {n} | Where-Object Offset -eq {}).PartitionNumber",
+            start_lba * 512
+        ))
+        .ok()
+        .and_then(|o| o.trim().parse::<u32>().ok())
+    };
+    let missing = |start_lba: u64| {
+        format!("O Windows ainda não enxerga a partição no setor {start_lba}: reconecte o disco e repita este passo.")
+    };
+    let same_disk = || {
+        if query_identity(n)? == pv.identity {
+            Ok(())
+        } else {
+            Err("o disco atual não é o alvo aprovado".to_string())
+        }
+    };
+    for &(start, sectors) in &t.resizes {
+        let Some(p) = number_at(start) else {
+            log.push(missing(start));
+            continue;
+        };
+        same_disk()?;
+        let want = sectors * 512;
+        ps(&format!(
+            "Resize-Partition -DiskNumber {n} -PartitionNumber {p} -Size {want} -ErrorAction Stop"
+        ))?;
+        let got = partition_info(n, p)?.size;
+        if got.abs_diff(want) > 1 << 20 {
+            return Err(format!(
+                "verificação falhou: tamanho {got}, esperado {want}"
+            ));
+        }
+        log.push(format!(
+            "Partição {p} redimensionada para {got} bytes e verificada."
+        ));
     }
     for f in &t.formats {
-        let q = format!(
-            "(Get-Partition -DiskNumber {n} | Where-Object Offset -eq {}).PartitionNumber",
-            f.start_lba * 512
-        );
-        let num = storage_common::run_readonly(
-            "powershell",
-            &["-NoProfile", "-NonInteractive", "-Command", &q],
-        )
-        .ok()
-        .and_then(|o| o.trim().parse::<u32>().ok());
-        match num {
+        match number_at(f.start_lba) {
             Some(p) => {
                 format_partition(n, &pv.identity, p, f.fs)?;
-                log.push(format!("Partição {p} formatada como {} e verificada.", f.fs.name()));
+                log.push(format!(
+                    "Partição {p} formatada como {} e verificada.",
+                    f.fs.name()
+                ));
             }
-            None => log.push(format!(
-                "O Windows ainda não enxerga a partição no setor {}: reconecte o disco e formate de novo.",
-                f.start_lba
-            )),
+            None => log.push(missing(f.start_lba)),
         }
     }
+    for (start, label) in &t.labels {
+        let Some(p) = number_at(*start) else {
+            log.push(missing(*start));
+            continue;
+        };
+        same_disk()?;
+        // `label` já foi restrito a [A-Za-z0-9 _.-] em `translate`; as aspas simples não podem ocorrer.
+        ps(&format!("Get-Partition -DiskNumber {n} -PartitionNumber {p} | Get-Volume | Set-Volume -NewFileSystemLabel '{label}' -ErrorAction Stop"))?;
+        log.push(format!("Rótulo da partição {p} definido como \"{label}\"."));
+    }
     Ok(log)
+}
+
+/// Executa um script PowerShell fixo (sem texto externo além de números e rótulos já filtrados).
+fn ps(script: &str) -> Result<String, String> {
+    let o = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if o.status.success() {
+        Ok(String::from_utf8_lossy(&o.stdout).into_owned())
+    } else {
+        Err(format!(
+            "PowerShell falhou: {}",
+            String::from_utf8_lossy(&o.stderr)
+        ))
+    }
 }

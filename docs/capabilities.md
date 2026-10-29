@@ -24,5 +24,6 @@ Regras que a matriz espelha (o planejador as aplica de novo ao simular): partiç
 |---|---|---|
 | Criar/excluir partição primária (MBR) | Testado em USB dedicado | ADR 0003 |
 | Formatar FAT32 / NTFS | Testado em USB dedicado | ADR 0003 |
-| GPT, redimensionar, mover, clonar, mesclar, dividir | Não implementado | — |
+| GPT (criar/excluir/formatar), MBR→GPT, redimensionar NTFS, rótulo | Implementado no Aplicar; teste real pendente | ADR 0003 |
+| Mover, clonar, mesclar, dividir, tipo, GPT→MBR | Não implementado | — |
 | Botão Aplicar do app (criar/excluir/formatar em MBR USB) | Implementado; teste real pelo app pendente | ADR 0003 |
