@@ -18,3 +18,11 @@ Regras que a matriz espelha (o planejador as aplica de novo ao simular): partiç
 - **Converter GPT↔MBR:** MBR exige no máximo 4 partições, nenhuma MSR e partições dentro do limite de 32 bits (2 TiB com setor de 512); GPT exige espaço no início e no fim para a tabela. Conversão é marcada como arriscada.
 - **Mesclar:** só partições adjacentes, com FS conhecido; se o uso é conhecido, os dados da segunda precisam caber no espaço livre da primeira.
 - **Dividir:** a nova partição começa alinhada a 1 MiB; arquivos excedentes precisam caber nela.
+
+## Escrita real (fase 0.2, ferramentas `gdp-mbr` e `gdp-format`, fora do app)
+| Operação | Estado | Evidência |
+|---|---|---|
+| Criar/excluir partição primária (MBR) | Testado em USB dedicado | ADR 0003 |
+| Formatar FAT32 / NTFS | Testado em USB dedicado | ADR 0003 |
+| GPT, redimensionar, mover, clonar, mesclar, dividir | Não implementado | — |
+| Botão Aplicar do app | Desabilitado, sem ligação ao motor | — |
