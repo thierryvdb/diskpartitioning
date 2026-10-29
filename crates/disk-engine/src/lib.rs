@@ -370,5 +370,28 @@ mod tests {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fs {
+    Fat32,
+    Ntfs,
+}
+
+impl Fs {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_ascii_uppercase().as_str() {
+            "FAT32" => Some(Self::Fat32),
+            "NTFS" => Some(Self::Ntfs),
+            _ => None,
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Fat32 => "FAT32",
+            Self::Ntfs => "NTFS",
+        }
+    }
+}
+
+pub mod apply;
 #[cfg(windows)]
 pub mod win;

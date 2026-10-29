@@ -3,7 +3,9 @@ name = "disk-engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Fase 0.2: motor de escrita de tabela MBR sobre BlockDevice. Só há implementação em memória; nenhum dispositivo real."
+description = "Fase 0.2: motor de escrita MBR e formatação (FAT32/NTFS) sobre BlockDevice; backend Windows só para dispositivos USB dedicados."
 
 [dependencies]
 storage-common = { path = "../storage-common" }
+disk-domain = { path = "../disk-domain" }
+disk-planner = { path = "../disk-planner" }

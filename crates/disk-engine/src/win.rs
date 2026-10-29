@@ -1,6 +1,7 @@
 //! Backend Windows do `BlockDevice` (ADR 0003). Só é usado pela ferramenta de linha de comando
 //! `gdp-mbr`, nunca pelo app. A identidade vem do `Get-Disk` (somente leitura) e é recusado
 //! qualquer disco que não seja USB, ou que seja de boot/sistema.
+pub use crate::Fs;
 use crate::{BlockDevice, Identity};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -66,28 +67,6 @@ impl BlockDevice for WinDevice {
         self.file.seek(SeekFrom::Start(off))?;
         self.file.write_all(data)?;
         self.file.sync_all()
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Fs {
-    Fat32,
-    Ntfs,
-}
-
-impl Fs {
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.to_ascii_uppercase().as_str() {
-            "FAT32" => Some(Self::Fat32),
-            "NTFS" => Some(Self::Ntfs),
-            _ => None,
-        }
-    }
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Fat32 => "FAT32",
-            Self::Ntfs => "NTFS",
-        }
     }
 }
 
@@ -159,4 +138,101 @@ pub fn format_hash(disk: u32, target: &Identity, part: u32, fs: Fs) -> u64 {
         target.size_bytes,
         fs.name()
     ))
+}
+
+/// Prévia do que `apply` fará. Exige terminal/app elevado (abre o disco só para leitura).
+#[derive(Debug)]
+pub struct Preview {
+    pub disk_number: u32,
+    pub identity: Identity,
+    pub steps: Vec<String>,
+    pub hash: u64,
+    translated: crate::apply::Translated,
+}
+
+fn disk_number(id: &str) -> Result<u32, String> {
+    id.strip_prefix("disk")
+        .and_then(|n| n.parse().ok())
+        .ok_or_else(|| format!("id de disco inesperado: {id}"))
+}
+
+pub fn preview(disk: &disk_domain::Disk, ops: &[disk_domain::Op]) -> Result<Preview, String> {
+    let n = disk_number(&disk.id)?;
+    let dev = WinDevice::open(n, false)?;
+    let table = crate::read_table(&dev).map_err(|e| format!("{e:?}"))?;
+    let translated = crate::apply::translate(disk, &table, ops)?;
+    let identity = dev.identity().clone();
+    let hash = crate::plan_hash_str(&format!(
+        "apply disk={n} serial={} size={} {:?} {:?}",
+        identity.serial, identity.size_bytes, translated.mbr, translated.formats
+    ));
+    Ok(Preview {
+        disk_number: n,
+        identity,
+        steps: translated.summary.clone(),
+        hash,
+        translated,
+    })
+}
+
+/// Executa o plano: exige o serial digitado e o hash da prévia (recalculada agora).
+pub fn apply(
+    disk: &disk_domain::Disk,
+    ops: &[disk_domain::Op],
+    typed_serial: &str,
+    hash: u64,
+) -> Result<Vec<String>, String> {
+    let pv = preview(disk, ops)?;
+    if typed_serial != pv.identity.serial {
+        return Err("o serial digitado não confere com o disco".into());
+    }
+    if hash != pv.hash {
+        return Err("o plano ou o disco mudou desde a prévia; gere a prévia de novo".into());
+    }
+    let (n, t) = (pv.disk_number, &pv.translated);
+    let mut log = vec![];
+    if !t.mbr.is_empty() {
+        let mut dev = WinDevice::open(n, true)?;
+        let ap = crate::Approval {
+            serial: pv.identity.serial.clone(),
+            size_bytes: pv.identity.size_bytes,
+            plan_hash: crate::plan_hash(&t.mbr),
+        };
+        crate::execute(&mut dev, &pv.identity, &ap, &t.mbr).map_err(|e| format!("{e:?}"))?;
+        log.push("Tabela MBR gravada e verificada por releitura.".to_string());
+    }
+    if !t.formats.is_empty() {
+        // Pede ao Windows para reler a tabela (não altera o disco) e só então localiza as partições.
+        let _ = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                &format!("Update-Disk -Number {n}"),
+            ])
+            .output();
+    }
+    for f in &t.formats {
+        let q = format!(
+            "(Get-Partition -DiskNumber {n} | Where-Object Offset -eq {}).PartitionNumber",
+            f.start_lba * 512
+        );
+        let num = storage_common::run_readonly(
+            "powershell",
+            &["-NoProfile", "-NonInteractive", "-Command", &q],
+        )
+        .ok()
+        .and_then(|o| o.trim().parse::<u32>().ok());
+        match num {
+            Some(p) => {
+                format_partition(n, &pv.identity, p, f.fs)?;
+                log.push(format!("Partição {p} formatada como {} e verificada.", f.fs.name()));
+            }
+            None => log.push(format!(
+                "O Windows ainda não enxerga a partição no setor {}: reconecte o disco e formate de novo.",
+                f.start_lba
+            )),
+        }
+    }
+    Ok(log)
 }

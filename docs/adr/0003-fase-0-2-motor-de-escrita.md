@@ -25,3 +25,10 @@ Classe de operação aprovada pelo proprietário: formatar FAT32 e NTFS (em sequ
 
 ## Evidência dos testes reais de formatação (executados pelo proprietário, 2026-10-29)
 Alvo `2B7C06071070`, partição 1 (início 1048576, 1073741824 bytes). `gdp-format --fs FAT32` (hash 17385003207237959396): "OK … FAT32 e verificada". Em seguida `--fs NTFS` (hash 4237421650828092899), com o sistema de arquivos anterior confirmado como FAT32 na simulação: "OK … NTFS e verificada". A verificação é a releitura do `Get-Volume` feita pela própria ferramenta.
+
+## Aplicar no app (autorizado pelo proprietário em 2026-10-29: "1")
+- Comandos IPC `preview_apply` (só leitura) e `apply_plan`. Só valem para o inventário **real**, disco USB não-boot/não-sistema, MBR de 512 B, e as operações criar/excluir/formatar (FAT32/NTFS); o resto é recusado em `disk_engine::apply::translate`.
+- O backend recalcula a prévia na hora de aplicar e exige: serial digitado pelo usuário igual ao do disco, e o hash da prévia (disco+serial+tamanho+passos). Não há elevação automática: o app precisa ser iniciado como administrador pelo proprietário; sem isso a prévia falha ao abrir o disco.
+- Formatar uma partição recém-criada usa `Update-Disk` e localiza a partição pelo deslocamento; se o Windows ainda não a enxergar, o app orienta reconectar o disco.
+- O botão Aplicar fica desabilitado no mock, com fila vazia ou com operações bloqueadas.
+- Teste real do fluxo pelo app: pendente de execução pelo proprietário.

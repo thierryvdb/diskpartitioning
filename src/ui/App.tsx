@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { APP_NAME, fmtSize, gibToSectors } from "../domain/format";
-import { getInventory, loadInventory, simulatePlan } from "../domain/api";
+import { type ApplyPreview, applyPlan, getInventory, loadInventory, previewApply, simulatePlan } from "../domain/api";
 import { alignUp, end, gaps, usage } from "../domain/layout";
 import type { Capability, Disk, Fs, Inventory, Kind, Op, Plan } from "../domain/types";
 import About from "./About";
@@ -72,6 +72,10 @@ export default function App() {
   const [target, setTarget] = useState("");
   const [label, setLabel] = useState("");
   const [newKind, setNewKind] = useState<Kind>("recovery");
+  const [prev, setPrev] = useState<ApplyPreview | null>(null);
+  const [typed, setTyped] = useState("");
+  const [applyLog, setApplyLog] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState(false);
   const seq = useRef(0);
   const [page, setPage] = useState<Page>("discos");
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
@@ -94,6 +98,19 @@ export default function App() {
     }, (e) => setNotice(`Falha ao ler inventário: ${e}`));
   };
   useEffect(() => { simulatePlan(ops).then(setPlan, (e) => setError(String(e))); }, [ops, inv?.fingerprint]);
+
+  const startApply = () => {
+    setApplyLog(null); setTyped("");
+    previewApply(disk.id, ops).then(setPrev, (e) => setNotice(`Não foi possível preparar a aplicação: ${e}`));
+  };
+  const confirmApply = () => {
+    if (!prev) return;
+    setBusy(true);
+    applyPlan(disk.id, ops, prev.hash, typed).then(
+      (log) => { setApplyLog(log); setOps([]); setRedo([]); reload(true); },
+      (e) => setApplyLog([`ERRO: ${e}`]),
+    ).finally(() => setBusy(false));
+  };
 
   if (error) return <p role="alert" className="error">Falha de IPC: {error}</p>;
   if (!inv || !plan) return <p role="status">Carregando inventário…</p>;
@@ -133,7 +150,7 @@ export default function App() {
       <header className="top">
         <img src="/icon.png" alt="" width={32} height={32} />
         <h1>{APP_NAME}</h1>
-        <span className="banner" role="status">Modo simulação — nenhuma alteração será gravada em discos.</span>
+        <span className="banner" role="status">{inv?.source === "real" ? "Inventário REAL — a fila é simulação; só grava ao aplicar, com prévia e serial." : "Modo simulação — nenhuma alteração será gravada em discos."}</span>
         <nav className="pages" aria-label="Páginas">
           {PAGES.map(([id, label]) => (
             <button key={id} className="btn" aria-current={page === id ? "page" : undefined} onClick={() => setPage(id)}>{label}</button>
@@ -160,7 +177,7 @@ export default function App() {
       <aside className="side" aria-label="Discos">
         <h2>Discos</h2>
         <div className="source">
-          <p><strong>Fonte:</strong> {inv.source === "real" ? "Real (somente leitura)" : "Mock (dados fictícios)"}</p>
+          <p><strong>Fonte:</strong> {inv.source === "real" ? "Real" : "Mock (dados fictícios)"}</p>
           {inv.source === "real" ? (
             <>
               <button className="btn" onClick={() => reload(true)}>Atualizar inventário</button>
@@ -331,10 +348,35 @@ export default function App() {
           })}
         </ol>
         {ops.length > 0 && <p className={plan.blockedOps.length ? "error" : "ok"}>{plan.blockedOps.length ? "Plano inválido: há operações bloqueadas." : "Simulação válida."}</p>}
-        <button className="btn" disabled title="Escrita real indisponível no MVP 0.1">Aplicar alterações (indisponível nesta versão)</button>
+        <button className="btn danger" disabled={inv.source !== "real" || !ops.length || plan.blockedOps.length > 0}
+          title={inv.source !== "real" ? "Aplicar só existe com o inventário REAL; o mock é apenas simulação." : undefined}
+          onClick={startApply}>Aplicar alterações ao disco {disk.id}…</button>
       </section>
 
-      <footer className="status">Inventário: {inv.source === "real" ? "REAL (somente leitura)" : "mock"} · Nenhuma operação será gravada em discos</footer>
+      <footer className="status">Inventário: {inv.source === "real" ? "REAL" : "mock"} · Só grava em disco após prévia e confirmação do serial</footer>
+      {prev && (
+        <div role="alertdialog" aria-label="Confirmar aplicação no disco" className="confirm">
+          <h2>Aplicar no disco {disk.id}: {prev.serial}</h2>
+          <p className="error">Isto altera o disco de verdade e não pode ser desfeito pelo app.</p>
+          <ol>{prev.steps.map((t, i) => <li key={i}>{t}</li>)}</ol>
+          {applyLog ? (
+            <>
+              <ul>{applyLog.map((t, i) => <li key={i}>{t}</li>)}</ul>
+              <button className="btn" onClick={() => { setPrev(null); setApplyLog(null); }}>Fechar</button>
+            </>
+          ) : (
+            <>
+              <label>Digite o serial do disco ({prev.serial}) para confirmar
+                <input value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />
+              </label>
+              <button className="btn danger" disabled={busy || typed !== prev.serial} onClick={confirmApply}>
+                {busy ? "Aplicando…" : "Aplicar agora"}
+              </button>
+              <button className="btn" disabled={busy} onClick={() => setPrev(null)}>Cancelar</button>
+            </>
+          )}
+        </div>
+      )}
       {about && <About onClose={() => setAbout(false)} />}
     </div>
   );

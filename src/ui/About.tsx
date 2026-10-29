@@ -18,7 +18,7 @@ export default function About({ onClose }: { onClose: () => void }) {
       <p><strong>Projeto original desenvolvido por Thierry Vanden Broucke.</strong></p>
       <p>Este software é distribuído sob a licença GNU GPL v3.0.</p>
       <p className="muted">O código pode ser utilizado, estudado, modificado e redistribuído conforme os termos da licença.</p>
-      <p className="muted">MVP 0.1: somente leitura e simulação. Nenhuma alteração é gravada em discos.</p>
+      <p className="muted">Simulação por padrão. A gravação em disco só ocorre no inventário real, após prévia e confirmação do serial.</p>
       <a className="btn block" href={REPO_URL} target="_blank" rel="noopener noreferrer"
         onClick={(e) => { e.preventDefault(); openUrl(REPO_URL).catch(() => {}); }}>Visitar repositório original</a>
       <form method="dialog"><button className="btn">Fechar</button></form>

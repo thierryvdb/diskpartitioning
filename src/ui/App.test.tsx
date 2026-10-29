@@ -76,7 +76,7 @@ it("leitura real exige confirmação explícita antes de chamar o backend", asyn
   fireEvent.click(screen.getByText("Ler discos reais…"));
   fireEvent.click(screen.getByText("Confirmo: ler discos reais"));
   await vi.waitFor(() => expect(calls).toContain("load_inventory:true"));
-  expect(await screen.findByText(/REAL \(somente leitura\)/, { selector: ".status" })).toBeTruthy();
+  expect(await screen.findByText(/REAL · Só grava/, { selector: ".status" })).toBeTruthy();
 });
 
 it("partição selecionada mostra espaço ocupado e livre; sem dado mostra desconhecido", async () => {

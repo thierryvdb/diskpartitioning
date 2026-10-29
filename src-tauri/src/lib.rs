@@ -1,4 +1,4 @@
-//! Bootstrap Tauri. IPC restrito a comandos nomeados e tipados, somente leitura/simulação.
+//! Bootstrap Tauri. IPC restrito a comandos nomeados e tipados, simulação e, só com confirmação explícita (serial + hash), aplicação via `disk-engine`.
 //! Proibido: `execute_command` genérico, escrita em dispositivos, elevação (AGENTS.md).
 //! Exportações vão só para a pasta de dados do app, com nomes fixos (nunca caminho vindo da UI).
 //! Fonte de dados: Mock por padrão. A leitura REAL (somente leitura) só ocorre quando o usuário
@@ -139,6 +139,89 @@ fn import_plan(inv: Shared, json: String) -> Result<ImportedPlan, String> {
     })
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ApplyPreview {
+    serial: String,
+    size_bytes: u64,
+    steps: Vec<String>,
+    /// String: u64 não cabe com exatidão em número JSON.
+    hash: String,
+}
+
+/// Só discos do inventário REAL; o disco é clonado para não segurar o lock durante a E/S.
+fn real_disk(inv: &Shared, disk_id: &str) -> Result<Disk, String> {
+    let g = inv.lock().unwrap();
+    if g.source != "real" {
+        return Err("Aplicar só existe com o inventário REAL; o mock é apenas simulação.".into());
+    }
+    g.disks
+        .iter()
+        .find(|d| d.id == disk_id)
+        .cloned()
+        .ok_or_else(|| "Disco não encontrado no inventário.".into())
+}
+
+/// Prévia exata do que será gravado (abre o disco só para leitura; exige app elevado). Não grava nada.
+#[tauri::command]
+async fn preview_apply(
+    inv: Shared<'_>,
+    disk_id: String,
+    ops: Vec<Op>,
+) -> Result<ApplyPreview, String> {
+    let disk = real_disk(&inv, &disk_id)?;
+    #[cfg(windows)]
+    {
+        let p =
+            tauri::async_runtime::spawn_blocking(move || disk_engine::win::preview(&disk, &ops))
+                .await
+                .map_err(|e| e.to_string())??;
+        Ok(ApplyPreview {
+            serial: p.identity.serial,
+            size_bytes: p.identity.size_bytes,
+            steps: p.steps,
+            hash: p.hash.to_string(),
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (disk, ops);
+        Err("A aplicação real só está implementada no Windows.".into())
+    }
+}
+
+/// Grava. Exige o serial digitado pelo usuário e o hash da prévia; ambos são rechecados no backend.
+#[tauri::command]
+async fn apply_plan(
+    inv: Shared<'_>,
+    disk_id: String,
+    ops: Vec<Op>,
+    hash: String,
+    serial: String,
+) -> Result<Vec<String>, String> {
+    let disk = real_disk(&inv, &disk_id)?;
+    warn!(disk = %disk_id, ops = ops.len(), "aplicação real solicitada pelo usuário");
+    #[cfg(windows)]
+    {
+        let hash: u64 = hash.parse().map_err(|_| "hash inválido")?;
+        let r = tauri::async_runtime::spawn_blocking(move || {
+            disk_engine::win::apply(&disk, &ops, &serial, hash)
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        match &r {
+            Ok(log) => warn!(steps = log.len(), "aplicação concluída"),
+            Err(e) => warn!(error = %e, "aplicação falhou"),
+        }
+        r
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (disk, ops, hash, serial);
+        Err("A aplicação real só está implementada no Windows.".into())
+    }
+}
+
 pub fn run() {
     tracing_subscriber::fmt().with_target(false).init();
     tauri::Builder::default()
@@ -150,7 +233,9 @@ pub fn run() {
             simulate_plan,
             export_snapshot,
             export_plan,
-            import_plan
+            import_plan,
+            preview_apply,
+            apply_plan
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o aplicativo");

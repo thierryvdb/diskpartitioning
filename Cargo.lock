@@ -755,6 +755,8 @@ dependencies = [
 name = "disk-engine"
 version = "0.1.0"
 dependencies = [
+ "disk-domain",
+ "disk-planner",
  "storage-common",
 ]
 
@@ -1355,6 +1357,7 @@ name = "global-disk-partitioning"
 version = "0.1.0"
 dependencies = [
  "disk-domain",
+ "disk-engine",
  "disk-planner",
  "serde",
  "storage-linux",
