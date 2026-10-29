@@ -4,3 +4,6 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Fase 0.2: motor de escrita de tabela MBR sobre BlockDevice. Só há implementação em memória; nenhum dispositivo real."
+
+[dependencies]
+storage-common = { path = "../storage-common" }

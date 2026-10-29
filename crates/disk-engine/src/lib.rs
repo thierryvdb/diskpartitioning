@@ -266,3 +266,6 @@ mod tests {
         assert!(matches!(execute(&mut d, &id, &approve(&id, &ops), &ops), Err(Error::Aborted { rolled_back: false, .. })));
     }
 }
+
+#[cfg(windows)]
+pub mod win;

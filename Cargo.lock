@@ -754,6 +754,9 @@ dependencies = [
 [[package]]
 name = "disk-engine"
 version = "0.1.0"
+dependencies = [
+ "storage-common",
+]
 
 [[package]]
 name = "disk-planner"
