@@ -47,7 +47,7 @@ export interface Issue {
 }
 
 export interface Inventory {
-  source: "mock" | "real";
+  source: "none" | "real";
   disks: Disk[];
   errors: string[];
   fingerprint: string;

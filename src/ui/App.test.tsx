@@ -11,12 +11,13 @@ const disk: Disk = {
     { id: "p2", name: "C:", startLba: 1000, lengthSectors: 2048, fs: "ntfs", kind: "normal", usedSectors: 512 }],
 };
 const calls: string[] = [];
-const inventory = { source: "mock", disks: [disk], errors: [], fingerprint: "f1" };
+const inventory = { source: "real", disks: [disk], errors: [], fingerprint: "f1" };
+let startEmpty = false; // true = app recém-aberto, sem inventário carregado
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: async (cmd: string, args?: { ops: Op[]; real?: boolean }) => {
-    calls.push(cmd + (cmd === "load_inventory" ? `:${args?.real}` : ""));
-    if (cmd === "get_inventory") return inventory;
-    if (cmd === "load_inventory") return { ...inventory, source: args?.real ? "real" : "mock", fingerprint: "f2" };
+  invoke: async (cmd: string, args?: { ops: Op[] }) => {
+    calls.push(cmd);
+    if (cmd === "get_inventory") return startEmpty ? { ...inventory, source: "none", disks: [] } : inventory;
+    if (cmd === "load_inventory") return { ...inventory, fingerprint: "f2" };
     const protectedMsg = "Partição EFI é protegida.";
     const off = (action: string) => ({ action, support: "unsupported", reason: protectedMsg });
     return {
@@ -26,11 +27,12 @@ vi.mock("@tauri-apps/api/core", () => ({
   },
 }));
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); startEmpty = false; });
 
-it("mostra banner de simulação e Aplicar desabilitado", async () => {
+it("sem inventário carregado o app não mostra discos e Aplicar fica desabilitado", async () => {
+  startEmpty = true;
   render(<App />);
-  expect(await screen.findByText(/nenhuma alteração será gravada em discos\.$/, { selector: ".banner" })).toBeTruthy();
+  expect(await screen.findByText(/Nenhum disco carregado/, { selector: ".banner" })).toBeTruthy();
   expect((screen.getByText(/Aplicar alterações/) as HTMLButtonElement).disabled).toBe(true);
 });
 
@@ -67,15 +69,16 @@ it("Configurações aplica e persiste o tema", async () => {
 });
 
 it("leitura real exige confirmação explícita antes de chamar o backend", async () => {
+  startEmpty = true;
   calls.length = 0;
   render(<App />);
   fireEvent.click(await screen.findByText("Ler discos reais…"));
-  expect(calls.some((c) => c.startsWith("load_inventory"))).toBe(false);
+  expect(calls.some((c) => c === "load_inventory")).toBe(false);
   fireEvent.click(screen.getByText("Cancelar"));
-  expect(calls.some((c) => c.startsWith("load_inventory"))).toBe(false);
+  expect(calls.some((c) => c === "load_inventory")).toBe(false);
   fireEvent.click(screen.getByText("Ler discos reais…"));
   fireEvent.click(screen.getByText("Confirmo: ler discos reais"));
-  await vi.waitFor(() => expect(calls).toContain("load_inventory:true"));
+  await vi.waitFor(() => expect(calls).toContain("load_inventory"));
   expect(await screen.findByText(/REAL · Só grava/, { selector: ".status" })).toBeTruthy();
 });
 

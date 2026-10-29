@@ -1,13 +1,12 @@
 //! Bootstrap Tauri. IPC restrito a comandos nomeados e tipados, simulação e, só com confirmação explícita (serial + hash), aplicação via `disk-engine`.
 //! Proibido: `execute_command` genérico, escrita em dispositivos, elevação (AGENTS.md).
 //! Exportações vão só para a pasta de dados do app, com nomes fixos (nunca caminho vindo da UI).
-//! Fonte de dados: Mock por padrão. A leitura REAL (somente leitura) só ocorre quando o usuário
-//! confirma na interface (`load_inventory(real = true)`); nenhum agente a executa sem autorização.
+//! Sem dados fictícios: o inventário começa vazio e a leitura dos discos (somente leitura) só ocorre quando o
+//! usuário confirma na interface (`load_inventory`); nenhum agente a executa sem autorização.
 
-use disk_domain::{Discovery, Disk, Op, Plan, StorageProvider};
+use disk_domain::{Discovery, Disk, Op, Plan};
 use serde::Serialize;
 use std::sync::Mutex;
-use storage_mock::MockProvider;
 use storage_persistence::{fingerprint, ImportedPlan, Snapshot};
 use tauri::{Manager, State};
 use tracing::{info, warn};
@@ -39,10 +38,10 @@ fn view(inv: &Inventory) -> InventoryView {
     }
 }
 
-fn mock() -> Inventory {
+fn empty() -> Inventory {
     Inventory {
-        source: "mock",
-        disks: MockProvider.discover(),
+        source: "none",
+        disks: vec![],
         errors: vec![],
     }
 }
@@ -62,25 +61,20 @@ fn get_inventory(inv: Shared) -> InventoryView {
     view(&inv.lock().unwrap())
 }
 
-/// Troca/atualiza o snapshot. `real = true` lê os discos da máquina (somente leitura).
+/// Lê os discos da máquina (somente leitura) e troca o snapshot.
 #[tauri::command]
-fn load_inventory(inv: Shared, real: bool) -> Result<InventoryView, String> {
-    let next = if real {
-        info!("inventário real solicitado pelo usuário (somente leitura)");
-        let d = discover_real().map_err(|e| {
-            warn!(error = %e, "falha no inventário real");
-            e
-        })?;
-        Inventory {
-            source: "real",
-            disks: d.disks,
-            errors: d.errors,
-        }
-    } else {
-        mock()
+fn load_inventory(inv: Shared) -> Result<InventoryView, String> {
+    info!("inventário real solicitado pelo usuário (somente leitura)");
+    let d = discover_real().map_err(|e| {
+        warn!(error = %e, "falha no inventário real");
+        e
+    })?;
+    let next = Inventory {
+        source: "real",
+        disks: d.disks,
+        errors: d.errors,
     };
     info!(
-        source = next.source,
         disks = next.disks.len(),
         errors = next.errors.len(),
         "inventário carregado"
@@ -153,7 +147,7 @@ struct ApplyPreview {
 fn real_disk(inv: &Shared, disk_id: &str) -> Result<Disk, String> {
     let g = inv.lock().unwrap();
     if g.source != "real" {
-        return Err("Aplicar só existe com o inventário REAL; o mock é apenas simulação.".into());
+        return Err("Carregue primeiro os discos reais.".into());
     }
     g.disks
         .iter()
@@ -226,7 +220,7 @@ pub fn run() {
     tracing_subscriber::fmt().with_target(false).init();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(Mutex::new(mock()))
+        .manage(Mutex::new(empty()))
         .invoke_handler(tauri::generate_handler![
             get_inventory,
             load_inventory,

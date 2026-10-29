@@ -23,7 +23,7 @@ export function Overview({ base, plan, ops }: { base: Disk[]; plan: Plan; ops: O
     <>
       <h2>Visão geral</h2>
       <p className="muted">
-        Inventário: mock (nenhum disco real é lido nesta versão). "Não alocado" vem da tabela de partições, não do espaço
+        Inventário: o carregado na tela Discos. "Não alocado" vem da tabela de partições, não do espaço
         livre dos sistemas de arquivos.
       </p>
       <dl className="cards">

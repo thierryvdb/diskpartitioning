@@ -55,7 +55,7 @@ function PartUsage({ p, d }: { p: Disk["partitions"][number]; d: Disk }) {
 }
 
 export default function App() {
-  const [inv, setInv] = useState<Inventory | null>(null); // snapshot imutável (Mock ou Real via IPC)
+  const [inv, setInv] = useState<Inventory | null>(null); // snapshot imutável (vazio ou Real via IPC)
   const [confirmReal, setConfirmReal] = useState(false);
   const [notice, setNotice] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -89,9 +89,9 @@ export default function App() {
   useEffect(() => { getInventory().then(setInv, (e) => setError(String(e))); }, []);
 
   // real = true só é chamado pelo botão de confirmação (leitura somente leitura dos discos da máquina)
-  const reload = (real: boolean) => {
+  const reload = () => {
     setNotice("");
-    loadInventory(real).then((next) => {
+    loadInventory().then((next) => {
       if (inv && ops.length && next.fingerprint !== inv.fingerprint)
         setNotice("O layout mudou. Atualize o inventário para recalcular a simulação.");
       setInv(next); setDiskIdx(0); setSel(null); setConfirmReal(false);
@@ -107,7 +107,7 @@ export default function App() {
     if (!prev) return;
     setBusy(true);
     applyPlan(disk.id, ops, prev.hash, typed).then(
-      (log) => { setApplyLog(log); setOps([]); setRedo([]); reload(true); },
+      (log) => { setApplyLog(log); setOps([]); setRedo([]); reload(); },
       (e) => setApplyLog([`ERRO: ${e}`]),
     ).finally(() => setBusy(false));
   };
@@ -150,7 +150,7 @@ export default function App() {
       <header className="top">
         <img src="/icon.png" alt="" width={32} height={32} />
         <h1>{APP_NAME}</h1>
-        <span className="banner" role="status">{inv?.source === "real" ? "Inventário REAL — a fila é simulação; só grava ao aplicar, com prévia e serial." : "Modo simulação — nenhuma alteração será gravada em discos."}</span>
+        <span className="banner" role="status">{inv?.source === "real" ? "Inventário REAL — a fila é simulação; só grava ao aplicar, com prévia e serial." : "Nenhum disco carregado — leia os discos reais para começar."}</span>
         <nav className="pages" aria-label="Páginas">
           {PAGES.map(([id, label]) => (
             <button key={id} className="btn" aria-current={page === id ? "page" : undefined} onClick={() => setPage(id)}>{label}</button>
@@ -177,11 +177,10 @@ export default function App() {
       <aside className="side" aria-label="Discos">
         <h2>Discos</h2>
         <div className="source">
-          <p><strong>Fonte:</strong> {inv.source === "real" ? "Real" : "Mock (dados fictícios)"}</p>
+          <p><strong>Fonte:</strong> {inv.source === "real" ? "Real" : "nenhum disco carregado"}</p>
           {inv.source === "real" ? (
             <>
-              <button className="btn" onClick={() => reload(true)}>Atualizar inventário</button>
-              <button className="btn" onClick={() => reload(false)}>Voltar ao mock</button>
+              <button className="btn" onClick={() => reload()}>Atualizar inventário</button>
             </>
           ) : (
             <button className="btn" onClick={() => setConfirmReal(true)}>Ler discos reais…</button>
@@ -192,7 +191,7 @@ export default function App() {
                 Isto vai <strong>ler</strong> (somente leitura) os discos desta máquina via PowerShell/lsblk.
                 Nada será gravado e nenhuma elevação será solicitada. Simulações continuam sem efeito em disco.
               </p>
-              <button className="btn" onClick={() => reload(true)}>Confirmo: ler discos reais</button>
+              <button className="btn" onClick={() => reload()}>Confirmo: ler discos reais</button>
               <button className="btn" onClick={() => setConfirmReal(false)}>Cancelar</button>
             </div>
           )}
@@ -349,11 +348,11 @@ export default function App() {
         </ol>
         {ops.length > 0 && <p className={plan.blockedOps.length ? "error" : "ok"}>{plan.blockedOps.length ? "Plano inválido: há operações bloqueadas." : "Simulação válida."}</p>}
         <button className="btn danger" disabled={inv.source !== "real" || !ops.length || plan.blockedOps.length > 0}
-          title={inv.source !== "real" ? "Aplicar só existe com o inventário REAL; o mock é apenas simulação." : undefined}
+          title={inv.source !== "real" ? "Carregue primeiro os discos reais." : undefined}
           onClick={startApply}>Aplicar alterações ao disco {disk.id}…</button>
       </section>
 
-      <footer className="status">Inventário: {inv.source === "real" ? "REAL" : "mock"} · Só grava em disco após prévia e confirmação do serial</footer>
+      <footer className="status">Inventário: {inv.source === "real" ? "REAL" : "sem inventário"} · Só grava em disco após prévia e confirmação do serial</footer>
       {prev && (
         <div role="alertdialog" aria-label="Confirmar aplicação no disco" className="confirm">
           <h2>Aplicar no disco {disk.id}: {prev.serial}</h2>

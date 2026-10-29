@@ -10,7 +10,7 @@ Rust (stable), Node 20+, e no Windows as Build Tools do Visual Studio (C++) + We
 ## Desenvolvimento
 ```
 npm install
-npx tauri dev          # app desktop (dados mock)
+npx tauri dev          # app desktop
 npx tauri build        # instaladores (MSI/NSIS no Windows)
 cargo test --workspace # domínio e planejador (em memória)
 npm test               # interface (IPC simulado)

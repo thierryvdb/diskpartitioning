@@ -3,8 +3,8 @@ import type { Inventory, Op, Plan } from "./types";
 
 // Comandos IPC do app: leitura, simulação e, só com confirmação explícita (serial digitado + hash da prévia), aplicação.
 export const getInventory = () => invoke<Inventory>("get_inventory");
-// real = true lê os discos da máquina (somente leitura); só chamar após confirmação explícita do usuário.
-export const loadInventory = (real: boolean) => invoke<Inventory>("load_inventory", { real });
+// Lê os discos da máquina (somente leitura); só chamar após confirmação explícita do usuário.
+export const loadInventory = () => invoke<Inventory>("load_inventory");
 export const simulatePlan = (ops: Op[]) => invoke<Plan>("simulate_plan", { ops });
 
 // Exportações vão para a pasta de dados do app; retorna o caminho gravado.

@@ -1361,7 +1361,6 @@ dependencies = [
  "disk-planner",
  "serde",
  "storage-linux",
- "storage-mock",
  "storage-persistence",
  "storage-windows",
  "tauri",
